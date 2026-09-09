@@ -48,9 +48,8 @@ export default function Home() {
     };
   }, [result, size, message, address]);
 
-  function body(): FormData {
+  function fields(): FormData {
     const f = new FormData();
-    if (photo) f.set("photo", photo);
     f.set("style", style);
     f.set("size", size);
     f.set("model", model);
@@ -63,7 +62,18 @@ export default function Home() {
     setError("");
     setResult(null);
     try {
-      const res = await fetch("/api/generate", { method: "POST", body: body() });
+      const f = fields();
+      f.set("photo", await shrink(photo), "photo.jpg");
+      const res = await fetch("/api/generate", { method: "POST", body: f });
+      // A reverse proxy rejecting the upload answers with an HTML error page, and
+      // res.json() on that throws "Unexpected token '<'" instead of anything useful.
+      if (!res.headers.get("content-type")?.includes("json")) {
+        throw new Error(
+          res.status === 413
+            ? "The server rejected the upload as too large."
+            : `Server returned ${res.status} with a non-JSON error page.`,
+        );
+      }
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
       setResult(json);
@@ -75,7 +85,7 @@ export default function Home() {
   }
 
   async function dryRun() {
-    const res = await fetch("/api/generate?dryRun=1", { method: "POST", body: body() });
+    const res = await fetch("/api/generate?dryRun=1", { method: "POST", body: fields() });
     setDry(JSON.stringify(await res.json(), null, 2));
   }
 
@@ -244,4 +254,17 @@ export default function Home() {
 
 function show(alive: boolean, box: HTMLDivElement | null, canvas: HTMLCanvasElement) {
   if (alive && box) box.replaceChildren(canvas);
+}
+
+// Phone photos run 3-12MB and the models resample to about 1024px anyway, so uploading
+// the original only buys a reverse-proxy size rejection. 1600px keeps it under ~400KB.
+async function shrink(file: File, max = 1600): Promise<Blob> {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
+  if (scale === 1 && file.size < 1_000_000) return file;
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * scale);
+  c.height = Math.round(bmp.height * scale);
+  c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
+  return new Promise((r) => c.toBlob((b) => r(b!), "image/jpeg", 0.9));
 }

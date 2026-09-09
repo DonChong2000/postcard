@@ -39,9 +39,13 @@ providers take different paths.
 `POST /api/generate?dryRun=1` returns the resolved prompts and export dimensions
 without calling a model — free, and the quickest way to check prompt changes.
 
-Every request costs money, so uploads are capped at 10MB, checked by magic bytes rather
-than the browser's Content-Type, and rate limited to 10 per IP per hour (in memory, so
-it resets on restart).
+Photos are downscaled to 1600px in the browser before upload — the models resample to
+about 1024px anyway, so sending a 5MB original only risks a reverse-proxy size
+rejection. Typical upload is under 400KB.
+
+Every request costs money, so uploads are capped at 10MB server-side, checked by magic
+bytes rather than the browser's Content-Type, and rate limited to 10 per IP per hour
+(in memory, so it resets on restart).
 
 ## Deployment
 
