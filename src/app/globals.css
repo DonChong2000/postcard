@@ -66,3 +66,8 @@ body {
   outline: none;
   background: color-mix(in srgb, var(--color-accent) 7%, transparent);
 }
+
+/* The handwriting-picker scroller bleeds to the screen edge and scrolls horizontally;
+   a visible scrollbar there would look like a stray UI element. */
+.hscroll { scrollbar-width: none; }
+.hscroll::-webkit-scrollbar { display: none; }
