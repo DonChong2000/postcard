@@ -5,5 +5,8 @@ services:
       dockerfile: Dockerfile
     container_name: postcard
     restart: unless-stopped
+    # AI_GATEWAY_API_KEY lives here, next to docker-compose.yml on the server. Not in git.
+    env_file:
+      - .env
     ports:
       - '3002:3002'
