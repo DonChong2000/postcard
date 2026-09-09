@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Caveat, Courier_Prime, Gloria_Hallelujah } from "next/font/google";
 import { download, renderBack, renderFront } from "@/lib/canvas";
 import {
@@ -71,6 +71,11 @@ export default function Home() {
   const busy = stage >= 0;
   const fold = SIZES[size].fold;
   const addr = address.split("\n");
+
+  // Preview of the chosen photo on the card front, before generation. Revoked whenever
+  // `photo` changes so blob URLs don't pile up.
+  const photoUrl = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
+  useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
   // Below 700px the card is too small to type into directly (Caveat lands near 11px), so
   // focusing a card field instead opens a full-screen write sheet. False on first paint so
@@ -208,12 +213,18 @@ export default function Home() {
                     alt="Generated front artwork"
                     className="absolute inset-0 size-full object-cover"
                   />
+                ) : photo && photoUrl ? (
+                  <img
+                    src={photoUrl}
+                    alt="Your uploaded photo"
+                    className="absolute inset-0 size-full object-cover"
+                  />
                 ) : (
                   <Sample src="/sample-front.jpg" watermark={!narrow} />
                 )}
                 <div className="absolute bottom-[2.8cqw] left-[3.4cqw] flex items-center gap-2">
                   <span className="rounded-full bg-paper/90 px-[1.6cqw] py-[0.5cqw] text-[max(9px,1.72cqw)] text-neutral-800">
-                    front · generated art
+                    {photo && !result ? "front · your photo" : "front · generated art"}
                   </span>
                   {busy && (
                     <span className="animate-rise rounded-full bg-accent px-[10px] py-[3px] text-[11px] text-bg">
