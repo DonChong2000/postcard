@@ -4,10 +4,11 @@
 // generated).
 import { SIZES, type SizeKey } from "./postcard";
 
-export type BackFields = { message: string; address: string };
+// `font` is a CSS font-family list; the page passes the handwriting face the user
+// picked so the download matches what they see written on the card.
+export type BackFields = { message: string; address: string; font: string };
 
 const INK = "#22303c";
-const SANS = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
 
 async function load(src: string): Promise<HTMLImageElement> {
   const img = new Image();
@@ -69,6 +70,9 @@ export async function renderBack(
   const [c, ctx] = sheet(size);
   const { width: w, height: h } = c;
   cover(ctx, await load(src), w, h);
+  // The handwriting faces are webfonts; canvas silently falls back if they are not in
+  // yet. They are already painted on the card preview, so this resolves immediately.
+  await document.fonts.ready;
 
   const pad = Math.round(w * 0.05);
   const mid = w / 2;
@@ -103,9 +107,9 @@ export async function renderBack(
   const addrRight = w - pad;
   const gap = Math.round(h * 0.09);
   const addrLines = fields.address.split("\n");
-  ctx.font = `${Math.round(h * 0.035)}px ${SANS}`;
+  ctx.font = `${Math.round(h * 0.035)}px ${fields.font}`;
   ctx.lineWidth = 2;
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 3; i++) {
     const y = addressTop + i * gap;
     if (addrLines[i]) ctx.fillText(addrLines[i], addrLeft + 8, y - 12);
     ctx.beginPath();
@@ -116,7 +120,7 @@ export async function renderBack(
 
   // Message, left half.
   const msgSize = Math.round(h * 0.042);
-  ctx.font = `${msgSize}px ${SANS}`;
+  ctx.font = `${msgSize}px ${fields.font}`;
   const msgWidth = mid - pad * 2;
   let y = pad + msgSize;
   for (const line of wrap(ctx, fields.message, msgWidth)) {

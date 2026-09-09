@@ -8,6 +8,10 @@ with the divider, stamp box, address lines and message drawn over it in real tex
 image models cannot render legible lettering, so nothing that has to be read is
 generated. Both are composed and downloaded in the browser; nothing is stored.
 
+The card flips between front and back on screen, and the message and address are typed
+directly on it in one of three handwriting faces. The preview is plain DOM over the
+generated images; `src/lib/canvas.ts` composes the real PNGs only on download.
+
 Sizes are both an A6 sheet (148 x 105 mm, 1748 x 1240 px at 300dpi): **standard**, and
 **foldable**, which folds down the middle into an A7 card.
 
