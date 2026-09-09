@@ -1,0 +1,9 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: postcard
+    restart: unless-stopped
+    ports:
+      - '3002:3002'
