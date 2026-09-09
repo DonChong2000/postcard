@@ -62,6 +62,7 @@ export default function Home() {
   const [stage, setStage] = useState(-1);
   const [error, setError] = useState("");
   const [dry, setDry] = useState("");
+  const [dragging, setDragging] = useState(false);
 
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const busy = stage >= 0;
@@ -140,7 +141,27 @@ export default function Home() {
         <div className="flex min-w-[260px] max-w-[320px] flex-[1_1_260px] flex-col gap-[22px]">
           <section>
             <Heading>1 · Your photo</Heading>
-            <label className="flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed border-neutral-400 bg-[color-mix(in_srgb,var(--color-surface)_55%,transparent)] p-[22px] text-center hover:border-accent hover:bg-accent-100">
+            {/* The hidden input can't be a drop target, so the label is one. */}
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const f = e.dataTransfer.files[0];
+                if (!f) return;
+                if (!f.type.startsWith("image/")) return setError("That isn't an image file.");
+                setError("");
+                setPhoto(f);
+              }}
+              // :hover doesn't fire while a drag is in progress, so `dragging` stands in for it.
+              className={`flex cursor-pointer flex-col items-center gap-2 rounded-lg border-2 border-dashed bg-[color-mix(in_srgb,var(--color-surface)_55%,transparent)] p-[22px] text-center hover:border-accent hover:bg-accent-100 ${
+                dragging ? "border-accent bg-accent-100" : "border-neutral-400"
+              }`}
+            >
               <span className="grid size-[58px] place-items-center rounded-full bg-accent-200 text-accent-700">
                 <ArrowUp />
               </span>
@@ -258,12 +279,14 @@ export default function Home() {
             >
               {/* Front */}
               <Face>
-                {result && (
+                {result ? (
                   <img
                     src={result.front}
                     alt="Generated front artwork"
                     className="absolute inset-0 size-full object-cover"
                   />
+                ) : (
+                  <Sample src="/sample-front.jpg" />
                 )}
                 <div className="absolute bottom-[18px] left-[22px] flex items-center gap-2">
                   <span className="rounded-full bg-paper/90 px-[10px] py-[3px] text-[11px] text-neutral-800">
@@ -283,12 +306,14 @@ export default function Home() {
 
               {/* Back */}
               <Face className="grid grid-cols-2 [transform:rotateY(180deg)]">
-                {result && (
+                {result ? (
                   <img
                     src={result.back}
                     alt="Generated back artwork"
                     className="absolute inset-0 size-full object-cover"
                   />
+                ) : (
+                  <Sample src="/sample-back.jpg" />
                 )}
                 <textarea
                   value={message}
@@ -459,6 +484,20 @@ function Face({ className = "", children }: { className?: string; children: Reac
       className={`absolute inset-0 overflow-hidden bg-paper shadow-lg [backface-visibility:hidden] ${className}`}
     >
       {children}
+    </div>
+  );
+}
+
+// Stands in until there is a real card: an example postcard faded right back, watermarked
+// so it never reads as the user's own. Never exported — the canvas renderers don't see it.
+function Sample({ src }: { src: string }) {
+  return (
+    <div className="pointer-events-none absolute inset-0 select-none @container">
+      {/* fill, not cover: the back sample's art is in its corners, which cover would crop off. */}
+      <img src={src} alt="" className="size-full object-fill opacity-15" />
+      <span className="absolute inset-0 grid place-items-center font-heading text-[14cqw] tracking-[0.18em] text-neutral-500/40">
+        SAMPLE
+      </span>
     </div>
   );
 }
