@@ -217,7 +217,7 @@ export default function Home() {
                   <img
                     src={photoUrl}
                     alt="Your uploaded photo"
-                    className="absolute inset-0 size-full object-cover"
+                    className="absolute inset-0 size-full object-cover opacity-15"
                   />
                 ) : (
                   <Sample src="/sample-front.jpg" watermark={!narrow} />
@@ -235,9 +235,8 @@ export default function Home() {
                 {busy && (
                   <div className="animate-sweep absolute inset-y-0 w-[35%] bg-linear-to-r from-transparent via-paper/75 to-transparent" />
                 )}
-                {narrow && (
+                {narrow && !photo && (
                   <CardUpload
-                    photo={photo}
                     setPhoto={setPhoto}
                     dragging={dragging}
                     setDragging={setDragging}
@@ -617,17 +616,17 @@ function Sample({ src, watermark = true }: { src: string; watermark?: boolean })
   );
 }
 
-// Narrow-only: replaces the sidebar's step-1 section, so the card front itself is the drop
-// target. No scrim or inner box — the dashed outline (real drag) and hover widen from 0 so
-// the sample art stays visible underneath, same as the step-1 dropzone it replaces.
+// Narrow-only, and only until a photo is picked: replaces the sidebar's step-1 section,
+// so the card front itself is the drop target. No scrim or inner box — the dashed outline
+// (real drag) and hover widen from 0 so the sample art stays visible underneath, same as
+// the step-1 dropzone it replaces. Once a photo is set the preview itself takes over and
+// this is unmounted, so there's no "picked" state to render here.
 function CardUpload({
-  photo,
   setPhoto,
   dragging,
   setDragging,
   setError,
 }: {
-  photo: File | null;
   setPhoto: (f: File | null) => void;
   dragging: boolean;
   setDragging: (b: boolean) => void;
@@ -657,10 +656,10 @@ function CardUpload({
     >
       <span className="inline-flex items-center gap-[0.5em] rounded-full bg-accent px-[4.6cqw] py-[2.2cqw] font-heading text-[max(13px,3.4cqw)] text-bg shadow-[0_6px_20px_rgba(46,43,37,.22)]">
         <ArrowUp size="1.1em" />
-        {photo ? "Photo ready" : "Add a photo"}
+        Add a photo
       </span>
       <span className="text-[max(10px,2.5cqw)] text-[rgba(32,30,29,.6)]">
-        {photo ? photo.name : "or drop one on the card · JPG, PNG, WebP"}
+        or drop one on the card · JPG, PNG, WebP
       </span>
       <input
         type="file"
