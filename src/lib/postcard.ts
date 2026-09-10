@@ -28,39 +28,34 @@ export const STYLES = {
       "outlines, no photorealism, no digital airbrushing — colour should look wet and " +
       "hand-painted.",
   },
-  gouache: {
-    label: "Gouache",
+  paper: {
+    label: "Paper illustration",
     prompt:
-      `A minimalist editorial gouache illustration of ${SUBJECT} on warm off-white ` +
-      "textured paper. A restrained, handcrafted illustration aesthetic inspired by " +
-      "contemporary editorial print design, translating the subject into simplified, " +
-      "flat-painted shapes while preserving its recognizable silhouette and important " +
-      "structural features. Warm ivory background with subtle natural paper grain and " +
-      "fibrous texture; matte gouache paint appearance with visible dry-brush texture " +
-      "and slightly uneven pigment coverage. Simplified geometric shapes and blocky " +
-      "forms with clean but imperfect hand-painted edges. Limited muted color palette " +
-      "with a few strong accent colors, soft desaturated secondary colors. No " +
-      "gradients or glossy digital rendering, no photorealism, no 3D-rendered " +
-      "appearance. Subtle overlap between painted shapes and small imperfections that " +
-      "make it feel physically illustrated — an understated editorial, museum-catalog " +
-      "aesthetic. Generous negative space around the subject, which is centered or " +
-      "carefully balanced within the composition, with a soft sparse painted shadow " +
-      "beneath it. People, if present, are mostly featureless or minimally detailed, " +
-      "with facial features omitted or reduced to extremely simple marks; realistic " +
-      "proportions but simplified anatomy, preserving recognizable detail through " +
-      "silhouette, color blocks, and a few key lines rather than fine detail. Minimal " +
-      "ink-like outlines: thin, slightly irregular hand-drawn lines only where " +
-      "necessary, no heavy cartoon outlines — structural detail indicated with simple " +
-      "painted shapes and sparse linework. Clean editorial poster composition: the " +
-      "isolated subject sits against an almost empty paper background with strong " +
-      "visual hierarchy, large areas of negative space, no unnecessary environmental " +
-      "details, and only a subtle grounding shadow — calm, sophisticated, collectible " +
-      "art-print feeling. Tactile cold-press, fine-grain paper texture with slightly " +
-      "mottled gouache pigment, subtle edge feathering, and tiny variations in opacity " +
-      "and brush coverage — a scanned traditional illustration feeling, NOT a clean " +
-      "vector illustration. Overall: quiet, nostalgic, handcrafted, modern editorial " +
-      "illustration — a museum exhibition print or art-book plate, understated and " +
-      "premium.",
+      `A minimal hand-drawn paper illustration of ${SUBJECT}, reinterpreting it as a ` +
+      "small, quiet, handmade visual poem rather than a literal picture. Extract only " +
+      "the most recognizable subject, its essential silhouette and proportions, key " +
+      "pose or gesture, and any important objects — the core relationship between " +
+      "them — and discard everything else. Highly simplified: delicate, slightly " +
+      "imperfect hand-drawn lines; a small number of bold, clearly defined flat " +
+      "acrylic-style color shapes; rough paper texture; visible handmade brush marks; " +
+      "slightly irregular, organic edges; subtle imperfections that make it feel " +
+      "genuinely handmade, never digitally polished. The illustrated subject is " +
+      "small, centered, and carefully composed, occupying no more than 15-20% of the " +
+      "canvas, surrounded by a large amount of negative space. Background is rough " +
+      "white, warm off-white, or pale natural paper — minimal editorial book-cover " +
+      "stock — with only a few lines or small color shapes suggesting the " +
+      "surrounding environment. Compress the palette to the dominant colors pulled " +
+      "from the photo, no more than 4 main colors, restrained and harmonious, used as " +
+      "bold but controlled flat blocks; preserve subtle paper grain and brush " +
+      "texture. No typography or lettering of any kind. The feeling is quiet, " +
+      "poetic, refined, minimal, innocent, artistic, and premium — a small subject " +
+      "surrounded by a large amount of empty space, like the cover of an independent " +
+      "art publication rather than a commercial advertisement. Avoid colored-pencil " +
+      "aesthetics, crayon textures, bleeding watercolor, pure line art, complex " +
+      "realistic illustration, heavy oil-painting effects, smooth polished digital " +
+      "illustration, 3D rendering or glossy 3D textures, commercial cartoon or " +
+      "e-commerce aesthetics, generic poster templates, and busy or overly " +
+      "decorative compositions.",
   },
 } as const;
 
