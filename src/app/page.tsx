@@ -840,8 +840,7 @@ function Card({
             // Stands in until there is a real card, watermarked so it never reads as the
             // user's own. Never exported — the canvas renderers don't see it.
             <div className="pointer-events-none absolute inset-0 select-none">
-              {/* fill, not cover: the sample's art is in its corners, which cover crops. */}
-              <img src="/sample-front.jpg" alt="" className="size-full object-fill opacity-[.13]" />
+              <img src="/sample-front.jpg" alt="" className="size-full object-cover opacity-[.13]" />
               {!compact && (
                 <span className="absolute inset-0 grid place-items-center font-heading text-[13cqw] tracking-[.18em] text-neutral-500/40">
                   SAMPLE
@@ -871,7 +870,7 @@ function Card({
             <img
               src="/sample-back.jpg"
               alt=""
-              className="pointer-events-none absolute inset-0 size-full object-fill opacity-15"
+              className="pointer-events-none absolute inset-0 size-full object-cover opacity-15"
             />
           )}
           <div
