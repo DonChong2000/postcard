@@ -28,14 +28,39 @@ export const STYLES = {
       "outlines, no photorealism, no digital airbrushing — colour should look wet and " +
       "hand-painted.",
   },
-  oil: {
-    label: "Oil painting",
+  gouache: {
+    label: "Gouache",
     prompt:
-      `A classical oil painting of ${SUBJECT}, rendered with thick, visible ` +
-      "brushstrokes and impasto texture built up on canvas. Rich, saturated colour " +
-      "mixed wet-on-wet, warm painterly light and soft shadow modelling. No flat vector " +
-      "shapes, no photorealism, no smooth digital gradients — the surface should read " +
-      "as physical paint.",
+      `A minimalist editorial gouache illustration of ${SUBJECT} on warm off-white ` +
+      "textured paper. A restrained, handcrafted illustration aesthetic inspired by " +
+      "contemporary editorial print design, translating the subject into simplified, " +
+      "flat-painted shapes while preserving its recognizable silhouette and important " +
+      "structural features. Warm ivory background with subtle natural paper grain and " +
+      "fibrous texture; matte gouache paint appearance with visible dry-brush texture " +
+      "and slightly uneven pigment coverage. Simplified geometric shapes and blocky " +
+      "forms with clean but imperfect hand-painted edges. Limited muted color palette " +
+      "with a few strong accent colors, soft desaturated secondary colors. No " +
+      "gradients or glossy digital rendering, no photorealism, no 3D-rendered " +
+      "appearance. Subtle overlap between painted shapes and small imperfections that " +
+      "make it feel physically illustrated — an understated editorial, museum-catalog " +
+      "aesthetic. Generous negative space around the subject, which is centered or " +
+      "carefully balanced within the composition, with a soft sparse painted shadow " +
+      "beneath it. People, if present, are mostly featureless or minimally detailed, " +
+      "with facial features omitted or reduced to extremely simple marks; realistic " +
+      "proportions but simplified anatomy, preserving recognizable detail through " +
+      "silhouette, color blocks, and a few key lines rather than fine detail. Minimal " +
+      "ink-like outlines: thin, slightly irregular hand-drawn lines only where " +
+      "necessary, no heavy cartoon outlines — structural detail indicated with simple " +
+      "painted shapes and sparse linework. Clean editorial poster composition: the " +
+      "isolated subject sits against an almost empty paper background with strong " +
+      "visual hierarchy, large areas of negative space, no unnecessary environmental " +
+      "details, and only a subtle grounding shadow — calm, sophisticated, collectible " +
+      "art-print feeling. Tactile cold-press, fine-grain paper texture with slightly " +
+      "mottled gouache pigment, subtle edge feathering, and tiny variations in opacity " +
+      "and brush coverage — a scanned traditional illustration feeling, NOT a clean " +
+      "vector illustration. Overall: quiet, nostalgic, handcrafted, modern editorial " +
+      "illustration — a museum exhibition print or art-book plate, understated and " +
+      "premium.",
   },
 } as const;
 
