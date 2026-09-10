@@ -1,19 +1,19 @@
 # Postcard
 
-Upload a photo, pick a style and a size, get a print-ready postcard front and back.
+Upload a photo, pick a style, get a print-ready postcard front and back.
 A [Next.js](https://nextjs.org) + Tailwind CSS project by [Don Chong](https://donchong.top).
 
 The front is generated from your photo. The back is a generated near-empty background
-with the divider, stamp box, address lines and message drawn over it in real text —
-image models cannot render legible lettering, so nothing that has to be read is
-generated. Both are composed and downloaded in the browser; nothing is stored.
+with the address lines and message drawn over it in real text — image models cannot
+render legible lettering, so nothing that has to be read is generated. Both are
+composed and downloaded in the browser; nothing is stored.
 
 The card flips between front and back on screen, and the message and address are typed
 directly on it in one of three handwriting faces. The preview is plain DOM over the
 generated images; `src/lib/canvas.ts` composes the real PNGs only on download.
 
-Sizes are both an A6 sheet (148 x 105 mm, 1748 x 1240 px at 300dpi): **standard**, and
-**foldable**, which folds down the middle into an A7 card.
+There is one size: an A5 sheet (210 x 148 mm, 2480 x 1748 px at 300dpi) that folds down
+the middle into an A6 card.
 
 ## Getting Started
 

@@ -4,7 +4,7 @@ import {
   buildPrompt,
   isKey,
   MODELS,
-  SIZES,
+  PAGE_PX,
   STYLES,
   type ModelKey,
 } from "@/lib/postcard";
@@ -57,7 +57,7 @@ async function generate(
         providerOptions: {
           google: {
             responseModalities: ["IMAGE"],
-            // No model offers A6's 1.41:1, so take the nearest and crop on export.
+            // No model offers A5's 1.41:1, so take the nearest and crop on export.
             imageConfig: { aspectRatio: "4:3", imageSize: "2K" },
           },
         },
@@ -103,23 +103,21 @@ export async function POST(request: Request) {
 
   const form = await request.formData();
   const style = form.get("style");
-  const size = form.get("size");
   const model = form.get("model");
 
   if (!isKey(STYLES, style)) return bad(`unknown style: ${style}`);
-  if (!isKey(SIZES, size)) return bad(`unknown size: ${size}`);
   if (!isKey(MODELS, model)) return bad(`unknown model: ${model}`);
 
   const prompts = {
-    front: buildPrompt(style, size, "front"),
-    back: buildPrompt(style, size, "back"),
+    front: buildPrompt(style, "front"),
+    back: buildPrompt(style, "back"),
   };
 
   if (dryRun) {
     return Response.json({
       dryRun: true,
       model: MODELS[model].id,
-      export: SIZES[size].px,
+      export: PAGE_PX,
       prompts,
     });
   }

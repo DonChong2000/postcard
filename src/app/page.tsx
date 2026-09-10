@@ -3,14 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Caveat, Courier_Prime, Gloria_Hallelujah } from "next/font/google";
 import { download, renderBack, renderFront } from "@/lib/canvas";
-import {
-  MODELS,
-  SIZES,
-  STYLES,
-  type ModelKey,
-  type SizeKey,
-  type StyleKey,
-} from "@/lib/postcard";
+import { MODELS, STYLES, type ModelKey, type StyleKey } from "@/lib/postcard";
 
 const gloria = Gloria_Hallelujah({ weight: "400", subsets: ["latin"] });
 const caveat = Caveat({ subsets: ["latin"] });
@@ -29,21 +22,11 @@ const FONTS = {
 type FontKey = keyof typeof FONTS;
 type Result = { front: string; back: string };
 
-// The picker copy for each STYLES / SIZES key. The prompts themselves live in
-// postcard.ts; these are only ever read to draw the two controls.
+// The picker copy for each STYLES key. The prompts themselves live in postcard.ts;
+// this is only ever read to draw the style control.
 const STYLE_CARDS: Record<StyleKey, { inks: string[]; blurb: string }> = {
   vintage: { inks: ["#f7efdf", "#1d3557", "#e63946"], blurb: "Three flat inks, lots of paper" },
   polygon: { inks: ["#7a8a5e", "#c67139", "#46514f"], blurb: "Flat facets, colours from your photo" },
-};
-const SIZE_CARDS: Record<SizeKey, { label: string; note: string }> = {
-  standard: {
-    label: "Standard A6",
-    note: "148 × 105 mm · 1748 × 1240 px at 300 dpi",
-  },
-  foldable: {
-    label: "Foldable A7",
-    note: "A6 sheet folded to A7 · the red line is the fold, a guide only — it is not in the download",
-  },
 };
 
 // The wait is 30-60s of nothing; naming what is happening beats a dead spinner. The API
@@ -53,7 +36,6 @@ const STAGES = ["Reading your photo", "Printing the front", "Printing the back",
 export default function Home() {
   const [photo, setPhoto] = useState<File | null>(null);
   const [style, setStyle] = useState<StyleKey>("vintage");
-  const [size, setSize] = useState<SizeKey>("standard");
   const [font, setFont] = useState<FontKey>("script");
   const [model, setModel] = useState<ModelKey>("gemini-3.1-flash-image");
   const [face, setFace] = useState<"front" | "back">("front");
@@ -69,7 +51,6 @@ export default function Home() {
 
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const busy = stage >= 0;
-  const fold = SIZES[size].fold;
   const addr = address.split("\n");
 
   // Preview of the chosen photo on the card front, before generation. Revoked whenever
@@ -114,7 +95,6 @@ export default function Home() {
   function fields(): FormData {
     const f = new FormData();
     f.set("style", style);
-    f.set("size", size);
     f.set("model", model);
     return f;
   }
@@ -160,10 +140,10 @@ export default function Home() {
 
   async function saveBoth() {
     if (!result) return;
-    download(await renderFront(result.front, size), `postcard-${size}-front.png`);
+    download(await renderFront(result.front), "postcard-front.png");
     download(
-      await renderBack(result.back, size, { message, address, font: FONTS[font].css }, false),
-      `postcard-${size}-back.png`,
+      await renderBack(result.back, { message, address, font: FONTS[font].css }),
+      "postcard-back.png",
     );
   }
 
@@ -171,7 +151,7 @@ export default function Home() {
     <div className="flex flex-1 flex-col">
       <header className="mx-auto flex w-full max-w-[1440px] items-center gap-3 px-[clamp(16px,4vw,32px)] py-[clamp(12px,2.2vw,20px)]">
         <span className="font-heading text-[clamp(16px,3.4vw,18px)]">Postcard</span>
-        <span className="ml-auto text-[12px] text-muted">A6 · 300 dpi</span>
+        <span className="ml-auto text-[12px] text-muted">A5 · 300 dpi</span>
       </header>
 
       <main className="mx-auto flex w-full max-w-[1440px] flex-1 flex-row-reverse flex-wrap items-start gap-[clamp(20px,3vw,40px)] px-[clamp(16px,4vw,32px)] pt-2 pb-8">
@@ -202,7 +182,7 @@ export default function Home() {
 
           <div className="grid w-full place-items-center [perspective:1800px]">
             <div
-              className="relative aspect-[1748/1240] w-full max-w-[820px] transition-transform duration-700 ease-[cubic-bezier(.2,.7,.2,1)] [transform-style:preserve-3d]"
+              className="relative aspect-[2480/1748] w-full max-w-[820px] transition-transform duration-700 ease-[cubic-bezier(.2,.7,.2,1)] [transform-style:preserve-3d]"
               style={{ transform: `rotateY(${face === "back" ? 180 : 0}deg)` }}
             >
               {/* Front */}
@@ -243,7 +223,7 @@ export default function Home() {
                     setError={setError}
                   />
                 )}
-                {fold && <FoldGuide />}
+                <FoldGuide />
               </Face>
 
               {/* Back */}
@@ -265,7 +245,7 @@ export default function Home() {
                   className="writable relative resize-none leading-[1.7]"
                   style={{
                     padding: "20% 11% 10%",
-                    borderRight: fold ? "0" : "2px solid var(--color-neutral-300)",
+                    borderRight: "0",
                     fontFamily: FONTS[font].css,
                     fontSize: FONTS[font].card,
                   }}
@@ -274,9 +254,6 @@ export default function Home() {
                   className="relative flex flex-col"
                   style={{ padding: "14% 11% 10%", gap: "4%" }}
                 >
-                  {!fold && (
-                    <div className="aspect-[.83] w-[26%] self-end rounded-[max(3px,0.6cqw)] border-[max(1.5px,0.3cqw)] border-dashed border-neutral-400" />
-                  )}
                   <div
                     className="mt-[2%] flex flex-col gap-[5%]"
                     style={{ fontFamily: FONTS[font].css, fontSize: FONTS[font].card }}
@@ -293,7 +270,7 @@ export default function Home() {
                     ))}
                   </div>
                 </div>
-                {fold && <FoldGuide />}
+                <FoldGuide />
               </Face>
             </div>
           </div>
@@ -404,24 +381,6 @@ export default function Home() {
             </div>
           </section>
 
-          <section>
-            <Heading>{narrow ? 2 : 3} · Size</Heading>
-            <Seg className="w-full">
-              {(Object.keys(SIZES) as SizeKey[]).map((k) => (
-                <SegOpt
-                  key={k}
-                  name="size"
-                  on={size === k}
-                  onSelect={() => setSize(k)}
-                  className="flex-1 justify-center px-[12px] py-[9px]"
-                >
-                  {SIZE_CARDS[k].label}
-                </SegOpt>
-              ))}
-            </Seg>
-            <p className="mt-2 text-[12px] text-muted">{SIZE_CARDS[size].note}</p>
-          </section>
-
           <button
             onClick={generate}
             disabled={busy}
@@ -483,7 +442,7 @@ export default function Home() {
               Done
             </button>
           </div>
-          <div className="relative flex aspect-[1240/1748] w-full max-h-[calc(100dvh-120px)] flex-col overflow-hidden rounded-[6px] bg-paper shadow-[0_12px_32px_rgba(46,43,37,.35)]">
+          <div className="relative flex aspect-[1748/2480] w-full max-h-[calc(100dvh-120px)] flex-col overflow-hidden rounded-[6px] bg-paper shadow-[0_12px_32px_rgba(46,43,37,.35)]">
             <img
               src="/sample-back.jpg"
               alt=""

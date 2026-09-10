@@ -2,7 +2,6 @@
 // handler (for prompts). No I/O in here so `?dryRun=1` can exercise it for free.
 
 export type StyleKey = keyof typeof STYLES;
-export type SizeKey = keyof typeof SIZES;
 export type ModelKey = keyof typeof MODELS;
 export type Side = "front" | "back";
 
@@ -32,20 +31,8 @@ export const STYLES = {
   },
 } as const;
 
-// Both sizes print on the same A6 sheet (148x105mm landscape) at 300dpi. They differ
-// only in how the sheet is folded and therefore how the back is laid out.
-export const SIZES = {
-  standard: {
-    label: "Standard postcard — A6, 148 x 105 mm",
-    px: { w: 1748, h: 1240 },
-    fold: false,
-  },
-  foldable: {
-    label: "Foldable postcard — A6 sheet folded to A7, 74 x 105 mm",
-    px: { w: 1748, h: 1240 },
-    fold: true,
-  },
-} as const;
+// One size: an A5 sheet (210x148mm landscape) at 300dpi, folded down the middle to A6.
+export const PAGE_PX = { w: 2480, h: 1748 } as const;
 
 export const MODELS = {
   "gemini-3.1-flash-image": {
@@ -80,10 +67,10 @@ const FOLD_BACK_SUFFIX =
   " The sheet folds vertically down the exact centre; keep both halves equally empty " +
   "and let no motif cross the centre line.";
 
-export function buildPrompt(style: StyleKey, size: SizeKey, side: Side): string {
+export function buildPrompt(style: StyleKey, side: Side): string {
   let p: string = STYLES[style].prompt;
   if (side === "back") p += BACK_SUFFIX;
-  if (SIZES[size].fold) p += side === "front" ? FOLD_FRONT_SUFFIX : FOLD_BACK_SUFFIX;
+  p += side === "front" ? FOLD_FRONT_SUFFIX : FOLD_BACK_SUFFIX;
   return p;
 }
 

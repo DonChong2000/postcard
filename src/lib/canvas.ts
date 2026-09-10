@@ -1,8 +1,8 @@
-// Browser-only. Composes the print-ready PNGs: the generated art is cropped to the A6
+// Browser-only. Composes the print-ready PNGs: the generated art is cropped to the A5
 // ratio, and the back gets its divider / stamp box / message drawn on top in real text
 // (image models cannot render legible lettering, so nothing that must be read is
 // generated).
-import { SIZES, type SizeKey } from "./postcard";
+import { PAGE_PX } from "./postcard";
 
 // `font` is a CSS font-family list; the page passes the handwriting face the user
 // picked so the download matches what they see written on the card.
@@ -17,8 +17,8 @@ async function load(src: string): Promise<HTMLImageElement> {
   return img;
 }
 
-function sheet(size: SizeKey): [HTMLCanvasElement, CanvasRenderingContext2D] {
-  const { w, h } = SIZES[size].px;
+function sheet(): [HTMLCanvasElement, CanvasRenderingContext2D] {
+  const { w, h } = PAGE_PX;
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
@@ -29,7 +29,7 @@ function sheet(size: SizeKey): [HTMLCanvasElement, CanvasRenderingContext2D] {
 }
 
 // Fill the sheet with the image, cropping the overflow — the models only offer 4:3 or
-// 3:2 and A6 is 1.41:1, so something always has to go.
+// 3:2 and A5 is 1.41:1, so something always has to go.
 function cover(ctx: CanvasRenderingContext2D, img: HTMLImageElement, w: number, h: number) {
   const s = Math.max(w / img.width, h / img.height);
   const dw = img.width * s;
@@ -55,19 +55,18 @@ function wrap(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): st
   return lines;
 }
 
-export async function renderFront(src: string, size: SizeKey): Promise<HTMLCanvasElement> {
-  const [c, ctx] = sheet(size);
+export async function renderFront(src: string): Promise<HTMLCanvasElement> {
+  const [c, ctx] = sheet();
   cover(ctx, await load(src), c.width, c.height);
   return c;
 }
 
 export async function renderBack(
   src: string,
-  size: SizeKey,
   fields: BackFields,
   guides = false,
 ): Promise<HTMLCanvasElement> {
-  const [c, ctx] = sheet(size);
+  const [c, ctx] = sheet();
   const { width: w, height: h } = c;
   cover(ctx, await load(src), w, h);
   // The handwriting faces are webfonts; canvas silently falls back if they are not in
@@ -76,33 +75,11 @@ export async function renderBack(
 
   const pad = Math.round(w * 0.05);
   const mid = w / 2;
-  const fold = SIZES[size].fold;
   ctx.fillStyle = INK;
   ctx.strokeStyle = INK;
 
-  // A folded card gets no printed divider — the fold itself is the divider.
-  if (!fold) {
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(mid, pad);
-    ctx.lineTo(mid, h - pad);
-    ctx.stroke();
-  }
-
-  // Stamp box, top right. On a folded card the stamp goes on the outside, not here.
-  let addressTop = pad + Math.round(h * 0.1);
-  if (!fold) {
-    const bw = Math.round(w * 0.11);
-    const bh = Math.round(bw * 1.2);
-    ctx.save();
-    ctx.setLineDash([12, 10]);
-    ctx.lineWidth = 3;
-    ctx.strokeRect(w - pad - bw, pad, bw, bh);
-    ctx.restore();
-    addressTop = pad + bh + Math.round(h * 0.06);
-  }
-
   // Address lines, right half.
+  const addressTop = pad + Math.round(h * 0.1);
   const addrLeft = mid + pad;
   const addrRight = w - pad;
   const gap = Math.round(h * 0.09);
@@ -130,7 +107,7 @@ export async function renderBack(
   }
 
   // Preview-only fold guide. Never in the exported file.
-  if (guides && fold) {
+  if (guides) {
     ctx.save();
     ctx.setLineDash([20, 16]);
     ctx.strokeStyle = "#c0392b";
