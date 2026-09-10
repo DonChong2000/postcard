@@ -52,6 +52,7 @@ export default function Home() {
   const [stage, setStage] = useState(-1);
   const [error, setError] = useState("");
   const [dry, setDry] = useState("");
+  const [both, setBoth] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [sheet, setSheet] = useState(false);
@@ -157,6 +158,7 @@ export default function Home() {
           const f = new FormData();
           f.set("style", k);
           f.set("model", model);
+          if (both) f.set("back", "1");
           f.set("photo", blob, "photo.jpg");
           const res = await fetch("/api/generate", { method: "POST", body: f, signal: ac.signal });
           // A reverse proxy rejecting the upload answers with an HTML error page, and
@@ -211,6 +213,22 @@ export default function Home() {
     clearTimeout(savedTimer.current);
     setSaved(true);
     savedTimer.current = setTimeout(() => setSaved(false), 2600);
+  }
+
+  // Raw model output, before the A5 crop and the text overlay. data: URLs, so an
+  // anchor click is the whole download.
+  function saveRaw() {
+    if (!results) return;
+    for (const style of STYLE_KEYS) {
+      for (const k of ["front", "back"] as const) {
+        const src = results[style][k];
+        if (!src) continue;
+        const a = document.createElement("a");
+        a.href = src;
+        a.download = `raw-${style}-${k}.${src.slice(11, src.indexOf(";"))}`;
+        a.click();
+      }
+    }
   }
 
   const card = {
@@ -386,7 +404,7 @@ export default function Home() {
               {skeletons}
               {progress}
               <div className="flex items-center gap-2">
-                <span className="text-[12px] text-muted">{STAGES[stage]} · front and back</span>
+                <span className="text-[12px] text-muted">{STAGES[stage]} · {both ? "front and back" : "front"}</span>
                 <button onClick={stop} className={`${GHOST} ml-auto`}>
                   Stop
                 </button>
@@ -470,6 +488,21 @@ export default function Home() {
                   </option>
                 ))}
               </select>
+              <label className="flex cursor-pointer items-center gap-2 text-[13px]">
+                <input
+                  type="checkbox"
+                  checked={both}
+                  onChange={(e) => setBoth(e.target.checked)}
+                />
+                Generate back too (2× cost)
+              </label>
+              <button
+                onClick={saveRaw}
+                disabled={!results}
+                className="cursor-pointer rounded-full border border-divider px-4 py-2 text-[14px] disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                Download raw output (all styles)
+              </button>
               <button
                 onClick={dryRun}
                 className="cursor-pointer rounded-full border border-divider px-4 py-2 font-heading text-[14px]"
@@ -828,7 +861,7 @@ function Card({
         </div>
 
         <div className={`${faceClass} grid grid-cols-2 [transform:rotateY(180deg)]`}>
-          {active ? (
+          {active?.back ? (
             <img
               src={active.back}
               alt="Generated back artwork"

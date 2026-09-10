@@ -138,9 +138,11 @@ export async function POST(request: Request) {
   if (!process.env[key]) return bad(`${key} is not set`, 500);
 
   try {
+    // ponytail: the back is a near-empty wash and doubles the cost, so it is opt-in
+    // (dev panel). Empty string = the card falls back to plain paper.
     const [front, back] = await Promise.all([
       generate(model, prompts.front, bytes, mediaType),
-      generate(model, prompts.back, bytes, mediaType),
+      form.get("back") === "1" ? generate(model, prompts.back, bytes, mediaType) : "",
     ]);
     return Response.json({ front, back });
   } catch (e) {

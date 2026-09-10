@@ -67,7 +67,7 @@ export async function renderBack(
 ): Promise<HTMLCanvasElement> {
   const [c, ctx] = sheet();
   const { width: w, height: h } = c;
-  cover(ctx, await load(src), w, h);
+  if (src) cover(ctx, await load(src), w, h);
   // The handwriting faces are webfonts; canvas silently falls back if they are not in
   // yet. They are already painted on the card preview, so this resolves immediately.
   await document.fonts.ready;
