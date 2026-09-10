@@ -630,7 +630,7 @@ function CardUpload({
   );
 }
 
-// Preview only — renderBack draws its own guide and never puts it in the export.
+// Preview only — a CSS overlay, never part of the exported PNG.
 function FoldGuide() {
   return (
     <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0 border-l-[max(1px,0.3cqw)] border-dashed border-fold" />

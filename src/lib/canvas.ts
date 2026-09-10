@@ -64,7 +64,6 @@ export async function renderFront(src: string): Promise<HTMLCanvasElement> {
 export async function renderBack(
   src: string,
   fields: BackFields,
-  guides = false,
 ): Promise<HTMLCanvasElement> {
   const [c, ctx] = sheet();
   const { width: w, height: h } = c;
@@ -104,19 +103,6 @@ export async function renderBack(
     if (y > h - pad) break;
     ctx.fillText(line, pad, y);
     y += msgSize * 1.45;
-  }
-
-  // Preview-only fold guide. Never in the exported file.
-  if (guides) {
-    ctx.save();
-    ctx.setLineDash([20, 16]);
-    ctx.strokeStyle = "#c0392b";
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.moveTo(mid, 0);
-    ctx.lineTo(mid, h);
-    ctx.stroke();
-    ctx.restore();
   }
 
   return c;
