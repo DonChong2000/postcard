@@ -1,6 +1,7 @@
 # Postcard
 
-Upload a photo, pick a style, get a print-ready postcard front and back.
+Upload a photo, get 3 styles generated at once, and pick your favorite —
+a print-ready postcard front and back.
 A [Next.js](https://nextjs.org) + Tailwind CSS project by [Don Chong](https://donchong.top).
 
 The front is generated from your photo. The back is a generated near-empty background
@@ -35,7 +36,8 @@ picked in the dev panel at the bottom of the page:
 | `google/gemini-3.1-flash-image` | `generateText`, image-only response modality | ~$0.10 at 2K |
 | `openai/gpt-image-2.5-flare` | OpenAI-compatible `/v1/images/edits` | ~$0.02 |
 
-Two images per postcard, so budget roughly double those figures per generation.
+Every generation makes 3 styles (vintage, watercolor, oil), front + back each — 6
+images per postcard, so budget roughly 6x those figures per generation.
 `generateImage()` in the AI SDK cannot take an input image
 ([vercel/ai#14044](https://github.com/vercel/ai/issues/14044)), which is why the two
 providers take different paths.
