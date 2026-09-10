@@ -1,4 +1,5 @@
 import { generateText } from "ai";
+import { google } from "@ai-sdk/google";
 import OpenAI from "openai";
 import {
   buildPrompt,
@@ -53,7 +54,7 @@ async function generate(
     let text = "";
     for (let attempt = 0; attempt < 2; attempt++) {
       const r = await generateText({
-        model: m.id,
+        model: google(m.id),
         providerOptions: {
           google: {
             responseModalities: ["IMAGE"],
@@ -133,7 +134,8 @@ export async function POST(request: Request) {
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "local";
   if (rateLimited(ip)) return bad(`more than ${RATE_LIMIT} postcards in an hour`, 429);
 
-  if (!process.env.AI_GATEWAY_API_KEY) return bad("AI_GATEWAY_API_KEY is not set", 500);
+  const key = MODELS[model].provider === "google" ? "GOOGLE_GENERATIVE_AI_API_KEY" : "AI_GATEWAY_API_KEY";
+  if (!process.env[key]) return bad(`${key} is not set`, 500);
 
   try {
     const [front, back] = await Promise.all([

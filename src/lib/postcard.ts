@@ -65,7 +65,7 @@ export const PAGE_PX = { w: 2480, h: 1748 } as const;
 export const MODELS = {
   "gemini-3.1-flash-image": {
     label: "Google Gemini 3.1 Flash Image",
-    id: "google/gemini-3.1-flash-image",
+    id: "gemini-3.1-flash-image",
     provider: "google",
   },
   "gpt-image-2.5-flare": {
