@@ -18,6 +18,9 @@ preview — the message and address are typed beside it, in one of three handwri
 faces, and appear on it as you type. The preview is plain DOM over the generated images;
 `src/lib/canvas.ts` composes the real PNGs only on download.
 
+The ✨ in the corner of the message box rewrites what you wrote (`POST /api/polish`,
+`gemini-flash-lite-latest`) and leaves a Revert next to it to put your own words back.
+
 There is one size: an A5 sheet (210 x 148 mm, 2480 x 1748 px at 300dpi) that folds down
 the middle into an A6 card.
 
@@ -56,7 +59,9 @@ The dev panel also dumps the raw model output for all three styles, before the A
 providers take different paths.
 
 `POST /api/generate?dryRun=1` returns the resolved prompts and export dimensions
-without calling a model — free, and the quickest way to check prompt changes.
+without calling a model — free, and the quickest way to check prompt changes. The dev
+panel's "Load sample result" fills the flow with the sample art instead of generating,
+which covers the writing, preview and download paths for nothing.
 
 Photos are downscaled to 1600px in the browser before upload — the models resample to
 about 1024px anyway, so sending a 5MB original only risks a reverse-proxy size

@@ -24,7 +24,7 @@ via Vercel AI Gateway). Push to `main` deploys: lint → build → docker build 
 
 ## Architecture
 
-Four files do everything. The split exists so the money-spending part is small and the
+Five files do everything. The split exists so the money-spending part is small and the
 free parts are testable by eye.
 
 - **`src/lib/postcard.ts`** — pure data, no I/O: the 3 style prompts, the two model
@@ -39,6 +39,8 @@ free parts are testable by eye.
   ([vercel/ai#14044](https://github.com/vercel/ai/issues/14044)). Returns data: URLs.
   Guards before any spend: 10MB cap, magic-byte sniff (not Content-Type), 10/IP/hour
   in-memory.
+- **`src/app/api/polish/route.ts`** — the ✨ in the message box. One `generateText` call
+  on `gemini-flash-lite-latest`, plain text in and out, no rate limit of its own.
 - **`src/app/page.tsx`** — the whole UI, one client component. Picking a photo *is* the
   generate action (no confirm step; Stop/Replace undo it). The card preview is plain DOM
   over the returned images, both faces are `@container`s sized in `cqw`, so one component
@@ -50,7 +52,9 @@ free parts are testable by eye.
   lettering. Keep it that way.
 
 The back is opt-in (dev panel "Generate back too") because it doubles the cost; without
-it the back is plain paper with text drawn on it.
+it the back is plain paper with text drawn on it. The dev panel also loads the sample art
+as a fake result (free, exercises steps 3-4) and dumps the raw model output for all three
+styles.
 
 `src/instrumentation.ts` routes Node's fetch through `HTTPS_PROXY` when set — local dev
 only, no-op in production.

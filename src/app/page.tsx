@@ -53,6 +53,9 @@ export default function Home() {
   const [error, setError] = useState("");
   const [dry, setDry] = useState("");
   const [both, setBoth] = useState(false);
+  const [polishing, setPolishing] = useState(false);
+  // The message as it was before the last ✨ — null once there is nothing to revert to.
+  const [prev, setPrev] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [sheet, setSheet] = useState(false);
@@ -215,6 +218,21 @@ export default function Home() {
     savedTimer.current = setTimeout(() => setSaved(false), 2600);
   }
 
+  // Dev: fills in the sample art as if a generation had returned it, so the writing,
+  // preview and download paths can be worked on without spending anything. The photo is
+  // the same file, because step 3 unlocks on having one.
+  async function loadSample() {
+    const blob = await (await fetch("/sample-front.jpg")).blob();
+    setPhoto(new File([blob], "sample.jpg", { type: "image/jpeg" }));
+    setResults(
+      Object.fromEntries(
+        STYLE_KEYS.map((k) => [k, { front: "/sample-front.jpg", back: both ? "/sample-back.jpg" : "" }]),
+      ) as Results,
+    );
+    setActiveStyle(STYLE_KEYS[0]);
+    setError("");
+  }
+
   // Raw model output, before the A5 crop and the text overlay. data: URLs, so an
   // anchor click is the whole download.
   function saveRaw() {
@@ -225,11 +243,69 @@ export default function Home() {
         if (!src) continue;
         const a = document.createElement("a");
         a.href = src;
-        a.download = `raw-${style}-${k}.${src.slice(11, src.indexOf(";"))}`;
+        a.download = `raw-${style}-${k}.${src.startsWith("data:") ? src.slice(11, src.indexOf(";")) : "jpg"}`;
         a.click();
       }
     }
   }
+
+  async function polish() {
+    if (polishing || !message.trim()) return;
+    setPolishing(true);
+    setError("");
+    try {
+      const res = await fetch("/api/polish", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      setPrev(message);
+      setMessage(json.message);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPolishing(false);
+    }
+  }
+
+  // One box, two layouts — the rail and the phone sheet differ only in size.
+  const messageBox = (cls: string, autoFocus = false) => (
+    <div className="relative flex-none">
+      <textarea
+        autoFocus={autoFocus}
+        value={message}
+        onChange={(e) => setMessage(e.target.value)}
+        placeholder="Write your message here…"
+        className={`w-full resize-none rounded-[16px] border border-divider text-neutral-900 ${cls}`}
+      />
+      <div className="absolute right-[10px] bottom-[10px] flex items-center gap-[6px]">
+        {prev !== null && (
+          <button
+            onClick={() => {
+              setMessage(prev);
+              setPrev(null);
+            }}
+            className="cursor-pointer rounded-full bg-surface px-[9px] py-[3px] text-[11px] text-muted"
+          >
+            Revert
+          </button>
+        )}
+        <button
+          onClick={polish}
+          disabled={polishing || !message.trim()}
+          title="Improve this message with AI"
+          aria-label="Improve this message with AI"
+          className={`cursor-pointer rounded-full px-[6px] py-[2px] text-[13px] hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40 ${
+            polishing ? "animate-pulse" : ""
+          }`}
+        >
+          ✨
+        </button>
+      </div>
+    </div>
+  );
 
   const card = {
     face,
@@ -428,12 +504,9 @@ export default function Home() {
         </Step>
 
         <Step n={3} on={step >= 3} title="Write the back" meta={`${message.length} characters`}>
-          <textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Write your message here…"
-            className="h-[72px] flex-none resize-none rounded-[16px] border border-divider bg-paper px-[14px] py-[12px] text-[14px] leading-[1.6] text-neutral-900"
-          />
+          {messageBox(
+            "h-[92px] bg-paper px-[14px] pt-[12px] pb-[34px] text-[14px] leading-[1.6]",
+          )}
           <div className="flex flex-none flex-col gap-2">
             {ADDRESS_LINES.map((ph, i) => (
               <input
@@ -496,6 +569,12 @@ export default function Home() {
                 />
                 Generate back too (2× cost)
               </label>
+              <button
+                onClick={loadSample}
+                className="cursor-pointer rounded-full border border-divider px-4 py-2 text-[14px]"
+              >
+                Load sample result (no cost)
+              </button>
               <button
                 onClick={saveRaw}
                 disabled={!results}
@@ -698,13 +777,7 @@ export default function Home() {
               </button>
             </div>
             {/* 16px everywhere in here, or iOS zooms the viewport on focus. */}
-            <textarea
-              autoFocus
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="Write your message here…"
-              className="h-[120px] resize-none rounded-[16px] border border-divider bg-bg px-[14px] py-3 text-[16px] leading-[1.6] text-neutral-900"
-            />
+            {messageBox("h-[140px] bg-bg px-[14px] pt-3 pb-[36px] text-[16px] leading-[1.6]", true)}
             {ADDRESS_LINES.map((ph, i) => (
               <input
                 key={ph}
