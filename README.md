@@ -20,7 +20,10 @@ the middle into an A6 card.
 
 ```bash
 pnpm install
-echo "AI_GATEWAY_API_KEY=..." > .env.local   # Vercel AI Gateway key
+cat >> .env.local <<'EOF'
+AI_GATEWAY_API_KEY=...          # Vercel AI Gateway key, for OpenAI
+GOOGLE_GENERATIVE_AI_API_KEY=... # Google AI Studio key, for Gemini
+EOF
 pnpm run dev
 ```
 
@@ -28,13 +31,16 @@ Open [http://localhost:3000](http://localhost:3000) with your browser.
 
 ## Image generation
 
-Runs through the [Vercel AI Gateway](https://vercel.com/docs/ai-gateway). The model is
-picked in the dev panel at the bottom of the page:
+The model is picked in the dev panel at the bottom of the page:
 
 | Model | Path | Cost per image |
 |---|---|---|
-| `google/gemini-3.1-flash-image` | `generateText`, image-only response modality | ~$0.10 at 2K |
-| `openai/gpt-image-2.5-flare` | OpenAI-compatible `/v1/images/edits` | ~$0.02 |
+| `gemini-3.1-flash-image` | Google API directly via `@ai-sdk/google`, `generateText` with image-only response modality | ~$0.10 at 2K |
+| `openai/gpt-image-2.5-flare` | [Vercel AI Gateway](https://vercel.com/docs/ai-gateway), OpenAI-compatible `/v1/images/edits` | ~$0.02 |
+
+Gemini goes straight to Google (not through the gateway) so it authenticates with your
+own project's key and billing rather than the gateway's routing, which otherwise
+resolves `google/*` models to Vertex.
 
 Every generation makes 3 styles (vintage, watercolor, paper illustration), front + back each — 6
 images per postcard, so budget roughly 6x those figures per generation.
@@ -57,7 +63,8 @@ bytes rather than the browser's Content-Type, and rate limited to 10 per IP per 
 
 Self-hosted, deployed via GitHub Actions (`.github/workflows/deploy.yml`): lint → build → Docker build (CI validation) → SSH to the production server, which rebuilds via `docker compose up -d --build`. Pushing to `main` deploys to production.
 
-The server needs `AI_GATEWAY_API_KEY` in a `.env` file next to `docker-compose.yml`;
-the workflow only pulls and rebuilds, so without it every generation fails with a 500.
+The server needs `AI_GATEWAY_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY` in a `.env`
+file next to `docker-compose.yml`; the workflow only pulls and rebuilds, so without
+them every generation fails with a 500.
 
 Live at [postcard.donchong.com](https://postcard.donchong.com).
