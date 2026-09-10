@@ -4,9 +4,10 @@ Upload a photo, get 3 styles generated at once, and pick your favorite —
 a print-ready postcard front and back.
 A [Next.js](https://nextjs.org) + Tailwind CSS project by [Don Chong](https://donchong.top).
 
-The front is generated from your photo. The back is a generated near-empty background
-with the address lines and message drawn over it in real text — image models cannot
-render legible lettering, so nothing that has to be read is generated. Both are
+The front is generated from your photo. The back is plain paper with the address lines
+and message drawn over it in real text — image models cannot render legible lettering,
+so nothing that has to be read is generated. A generated near-empty background can be
+put behind that text with the dev panel's "Generate back too" toggle, at twice the cost. Both are
 composed and downloaded in the browser; nothing is stored.
 
 Picking a photo starts the generation immediately — there is no confirm step, and the
@@ -47,8 +48,9 @@ Gemini goes straight to Google (not through the gateway) so it authenticates wit
 own project's key and billing rather than the gateway's routing, which otherwise
 resolves `google/*` models to Vertex.
 
-Every generation makes 3 styles (vintage, watercolor, paper illustration), front + back each — 6
-images per postcard, so budget roughly 6x those figures per generation.
+Every generation makes 3 styles (vintage, watercolor, paper illustration) — 3 images per
+postcard, or 6 with the back turned on, so budget 3-6x those figures per generation.
+The dev panel also dumps the raw model output for all three styles, before the A5 crop.
 `generateImage()` in the AI SDK cannot take an input image
 ([vercel/ai#14044](https://github.com/vercel/ai/issues/14044)), which is why the two
 providers take different paths.
