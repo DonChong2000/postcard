@@ -8,26 +8,6 @@ export type Side = "front" | "back";
 const SUBJECT = "the scene in the uploaded photo";
 
 export const STYLES = {
-  vintage: {
-    label: "Vintage travel poster",
-    prompt:
-      `A minimalist vintage travel poster of ${SUBJECT}, vector screen print style, ` +
-      "flat 2D graphic illustration. Strict 3-color palette: off-white/cream paper " +
-      "background, deep navy blue (#1D3557), and muted vermilion red-orange (#E63946). " +
-      "Extremely clean composition with abundant negative space where the cream " +
-      "background dominates over 60% of the canvas. Sharp geometric vector outlines and " +
-      "flat silhouettes, no gradients, no photorealism, no 3D shading.",
-  },
-  watercolor: {
-    label: "Watercolor",
-    prompt:
-      `A traditional watercolor painting of ${SUBJECT}, soft translucent washes of ` +
-      "pigment on visibly textured cold-press paper. Loose, confident brushwork with " +
-      "gentle bleeding and pooling at the edges of each wash, occasional un-painted " +
-      "paper showing through as highlights. Muted, harmonious palette. No hard vector " +
-      "outlines, no photorealism, no digital airbrushing — colour should look wet and " +
-      "hand-painted.",
-  },
   paper: {
     label: "Paper illustration",
     prompt:
@@ -56,6 +36,26 @@ export const STYLES = {
       "illustration, 3D rendering or glossy 3D textures, commercial cartoon or " +
       "e-commerce aesthetics, generic poster templates, and busy or overly " +
       "decorative compositions.",
+  },
+  watercolor: {
+    label: "Watercolor",
+    prompt:
+      `A traditional watercolor painting of ${SUBJECT}, soft translucent washes of ` +
+      "pigment on visibly textured cold-press paper. Loose, confident brushwork with " +
+      "gentle bleeding and pooling at the edges of each wash, occasional un-painted " +
+      "paper showing through as highlights. Muted, harmonious palette. No hard vector " +
+      "outlines, no photorealism, no digital airbrushing — colour should look wet and " +
+      "hand-painted.",
+  },
+  vintage: {
+    label: "Vintage travel poster",
+    prompt:
+      `A minimalist vintage travel poster of ${SUBJECT}, vector screen print style, ` +
+      "flat 2D graphic illustration. Strict 3-color palette: off-white/cream paper " +
+      "background, deep navy blue (#1D3557), and muted vermilion red-orange (#E63946). " +
+      "Extremely clean composition with abundant negative space where the cream " +
+      "background dominates over 60% of the canvas. Sharp geometric vector outlines and " +
+      "flat silhouettes, no gradients, no photorealism, no 3D shading.",
   },
 } as const;
 
@@ -86,14 +86,16 @@ const BACK_SUFFIX =
   "perfectly legible on top.";
 
 const FOLD_FRONT_SUFFIX =
-  " Composition constraint: this artwork prints on a sheet that is folded vertically " +
-  "down the exact centre. Keep the entire subject and all visual interest in the RIGHT " +
-  "half of the canvas — that half becomes the front cover. The LEFT half must stay " +
-  "quiet and near-empty. Nothing important may cross the vertical centre line.";
+  " Composition constraint: keep the entire subject and all visual interest inside the " +
+  "RIGHT half of the canvas; the LEFT half stays quiet and near-empty, and nothing " +
+  "important crosses the vertical centre. Render this as one single continuous flat " +
+  "artwork: do NOT draw a fold, crease, seam, gutter, divider, frame, panel edge or any " +
+  "line down the middle, and do not show it as a folded card, book or brochure.";
 
 const FOLD_BACK_SUFFIX =
-  " The sheet folds vertically down the exact centre; keep both halves equally empty " +
-  "and let no motif cross the centre line.";
+  " Keep the left and right halves equally empty and let no motif cross the vertical " +
+  "centre, but render one single continuous flat surface: no fold, crease, seam, " +
+  "gutter, divider or line down the middle.";
 
 export function buildPrompt(style: StyleKey, side: Side): string {
   let p: string = STYLES[style].prompt;

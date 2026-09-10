@@ -633,7 +633,7 @@ export default function Home() {
           <div className="flex flex-col gap-[10px] rounded-[20px] bg-surface px-4 py-[14px]">
             {[
               "Add a photo — printing starts immediately.",
-              "Three fronts come back — vintage, watercolour, paper.",
+              "Three fronts come back — paper, watercolour, vintage.",
               "Write the back, download both sides to print.",
             ].map((t, i) => (
               <div key={t} className="flex items-baseline gap-[10px]">

@@ -48,7 +48,7 @@ Gemini goes straight to Google (not through the gateway) so it authenticates wit
 own project's key and billing rather than the gateway's routing, which otherwise
 resolves `google/*` models to Vertex.
 
-Every generation makes 3 styles (vintage, watercolor, paper illustration) — 3 images per
+Every generation makes 3 styles (paper illustration, watercolor, vintage) — 3 images per
 postcard, or 6 with the back turned on, so budget 3-6x those figures per generation.
 The dev panel also dumps the raw model output for all three styles, before the A5 crop.
 `generateImage()` in the AI SDK cannot take an input image
