@@ -18,16 +18,24 @@ export const STYLES = {
       "background dominates over 60% of the canvas. Sharp geometric vector outlines and " +
       "flat silhouettes, no gradients, no photorealism, no 3D shading.",
   },
-  polygon: {
-    label: "Low-poly polygon",
+  watercolor: {
+    label: "Watercolor",
     prompt:
-      `A low-poly polygon illustration of ${SUBJECT}, geometric vector art built ` +
-      "entirely from flat-shaded triangular facets. Every facet is one solid colour " +
-      "meeting its neighbours at a hard edge, forming a faceted crystalline mosaic of " +
-      "the subject. Limited palette of 8-10 flat tones sampled from the photo. No " +
-      "gradients within a facet, no texture, no outlines, no photorealism, no 3D " +
-      "shading or lighting. Clean composition; the subject still reads clearly as a " +
-      "silhouette at a glance.",
+      `A traditional watercolor painting of ${SUBJECT}, soft translucent washes of ` +
+      "pigment on visibly textured cold-press paper. Loose, confident brushwork with " +
+      "gentle bleeding and pooling at the edges of each wash, occasional un-painted " +
+      "paper showing through as highlights. Muted, harmonious palette. No hard vector " +
+      "outlines, no photorealism, no digital airbrushing — colour should look wet and " +
+      "hand-painted.",
+  },
+  oil: {
+    label: "Oil painting",
+    prompt:
+      `A classical oil painting of ${SUBJECT}, rendered with thick, visible ` +
+      "brushstrokes and impasto texture built up on canvas. Rich, saturated colour " +
+      "mixed wet-on-wet, warm painterly light and soft shadow modelling. No flat vector " +
+      "shapes, no photorealism, no smooth digital gradients — the surface should read " +
+      "as physical paint.",
   },
 } as const;
 

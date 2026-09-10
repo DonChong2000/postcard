@@ -21,27 +21,23 @@ const FONTS = {
 
 type FontKey = keyof typeof FONTS;
 type Result = { front: string; back: string };
+type Results = Record<StyleKey, Result>;
 
-// The picker copy for each STYLES key. The prompts themselves live in postcard.ts;
-// this is only ever read to draw the style control.
-const STYLE_CARDS: Record<StyleKey, { inks: string[]; blurb: string }> = {
-  vintage: { inks: ["#f7efdf", "#1d3557", "#e63946"], blurb: "Three flat inks, lots of paper" },
-  polygon: { inks: ["#7a8a5e", "#c67139", "#46514f"], blurb: "Flat facets, colours from your photo" },
-};
+const STYLE_KEYS = Object.keys(STYLES) as StyleKey[];
 
 // The wait is 30-60s of nothing; naming what is happening beats a dead spinner. The API
-// is a single request, so the stages are timed rather than reported.
-const STAGES = ["Reading your photo", "Printing the front", "Printing the back", "Trimming to A6"];
+// generates all styles in parallel, so the stages are timed rather than reported.
+const STAGES = ["Reading your photo", "Printing the fronts", "Printing the backs", "Trimming to A6"];
 
 export default function Home() {
   const [photo, setPhoto] = useState<File | null>(null);
-  const [style, setStyle] = useState<StyleKey>("vintage");
   const [font, setFont] = useState<FontKey>("script");
   const [model, setModel] = useState<ModelKey>("gemini-3.1-flash-image");
   const [face, setFace] = useState<"front" | "back">("front");
   const [message, setMessage] = useState("");
   const [address, setAddress] = useState("");
-  const [result, setResult] = useState<Result | null>(null);
+  const [results, setResults] = useState<Results | null>(null);
+  const [activeStyle, setActiveStyle] = useState<StyleKey>(STYLE_KEYS[0]);
   const [stage, setStage] = useState(-1);
   const [error, setError] = useState("");
   const [dry, setDry] = useState("");
@@ -52,6 +48,7 @@ export default function Home() {
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const busy = stage >= 0;
   const addr = address.split("\n");
+  const active = results ? results[activeStyle] : null;
 
   // Preview of the chosen photo on the card front, before generation. Revoked whenever
   // `photo` changes so blob URLs don't pile up.
@@ -92,38 +89,40 @@ export default function Home() {
     setWriting(true);
   }
 
-  function fields(): FormData {
-    const f = new FormData();
-    f.set("style", style);
-    f.set("model", model);
-    return f;
-  }
-
   async function generate() {
     if (!photo) return setError("Pick a photo first.");
     setError("");
-    setResult(null);
+    setResults(null);
     setStage(0);
     timer.current = setInterval(
       () => setStage((s) => Math.min(s + 1, STAGES.length - 1)),
       12_000,
     );
     try {
-      const f = fields();
-      f.set("photo", await shrink(photo), "photo.jpg");
-      const res = await fetch("/api/generate", { method: "POST", body: f });
-      // A reverse proxy rejecting the upload answers with an HTML error page, and
-      // res.json() on that throws "Unexpected token '<'" instead of anything useful.
-      if (!res.headers.get("content-type")?.includes("json")) {
-        throw new Error(
-          res.status === 413
-            ? "The server rejected the upload as too large."
-            : `Server returned ${res.status} with a non-JSON error page.`,
-        );
-      }
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
-      setResult(json);
+      const shrunk = await shrink(photo);
+      const entries = await Promise.all(
+        STYLE_KEYS.map(async (k) => {
+          const f = new FormData();
+          f.set("style", k);
+          f.set("model", model);
+          f.set("photo", shrunk, "photo.jpg");
+          const res = await fetch("/api/generate", { method: "POST", body: f });
+          // A reverse proxy rejecting the upload answers with an HTML error page, and
+          // res.json() on that throws "Unexpected token '<'" instead of anything useful.
+          if (!res.headers.get("content-type")?.includes("json")) {
+            throw new Error(
+              res.status === 413
+                ? "The server rejected the upload as too large."
+                : `Server returned ${res.status} with a non-JSON error page.`,
+            );
+          }
+          const json = await res.json();
+          if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+          return [k, json] as const;
+        }),
+      );
+      setResults(Object.fromEntries(entries) as Results);
+      setActiveStyle(STYLE_KEYS[0]);
       setFace("front");
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -134,15 +133,23 @@ export default function Home() {
   }
 
   async function dryRun() {
-    const res = await fetch("/api/generate?dryRun=1", { method: "POST", body: fields() });
-    setDry(JSON.stringify(await res.json(), null, 2));
+    const entries = await Promise.all(
+      STYLE_KEYS.map(async (k) => {
+        const f = new FormData();
+        f.set("style", k);
+        f.set("model", model);
+        const res = await fetch("/api/generate?dryRun=1", { method: "POST", body: f });
+        return [k, await res.json()] as const;
+      }),
+    );
+    setDry(JSON.stringify(Object.fromEntries(entries), null, 2));
   }
 
   async function saveBoth() {
-    if (!result) return;
-    download(await renderFront(result.front), "postcard-front.png");
+    if (!active) return;
+    download(await renderFront(active.front), "postcard-front.png");
     download(
-      await renderBack(result.back, { message, address, font: FONTS[font].css }),
+      await renderBack(active.back, { message, address, font: FONTS[font].css }),
       "postcard-back.png",
     );
   }
@@ -154,8 +161,72 @@ export default function Home() {
         <span className="ml-auto text-[12px] text-muted">A5 · 300 dpi</span>
       </header>
 
-      <main className="mx-auto flex w-full max-w-[1440px] flex-1 flex-row-reverse flex-wrap items-start gap-[clamp(20px,3vw,40px)] px-[clamp(16px,4vw,32px)] pt-2 pb-8">
-        <div className="flex min-w-[min(100%,380px)] flex-[1_1_520px] flex-col gap-[14px]">
+      <main className="mx-auto flex w-full max-w-[880px] flex-1 flex-col gap-[16px] px-[clamp(16px,4vw,32px)] pt-2 pb-8">
+        <div className="flex flex-wrap items-stretch gap-[10px]">
+          {!narrow && (
+            // The hidden input can't be a drop target, so the label is one.
+            <label
+              onDragOver={(e) => {
+                e.preventDefault();
+                setDragging(true);
+              }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const f = e.dataTransfer.files[0];
+                if (!f) return;
+                if (!f.type.startsWith("image/")) return setError("That isn't an image file.");
+                setError("");
+                setPhoto(f);
+              }}
+              // :hover doesn't fire while a drag is in progress, so `dragging` stands in for it.
+              className={`flex flex-[2_1_260px] cursor-pointer flex-row flex-wrap items-center justify-center gap-3 rounded-lg border-2 border-dashed bg-[color-mix(in_srgb,var(--color-surface)_55%,transparent)] p-[clamp(12px,2vw,16px)] text-center hover:border-accent hover:bg-accent-100 ${
+                dragging ? "border-accent bg-accent-100" : "border-neutral-400"
+              }`}
+            >
+              <span className="grid size-[44px] flex-none place-items-center rounded-full bg-accent-200 text-accent-700">
+                <ArrowUp size={20} />
+              </span>
+              <span className="flex min-w-[150px] flex-col gap-[2px] text-left">
+                <span className="font-heading text-[15px]">
+                  {photo ? "Photo ready" : "Drop a photo"}
+                </span>
+                <span className="text-[12px] text-muted">
+                  {photo ? (
+                    photo.name
+                  ) : (
+                    <>
+                      or{" "}
+                      <span className="text-accent-700 underline underline-offset-[3px]">
+                        browse
+                      </span>{" "}
+                      · JPG, PNG, WebP
+                    </>
+                  )}
+                </span>
+              </span>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
+                className="sr-only"
+              />
+            </label>
+          )}
+
+          <button
+            onClick={generate}
+            disabled={busy}
+            className="flex-[1_1_200px] cursor-pointer rounded-full bg-accent p-[14px] font-heading text-[15px] text-bg shadow-[0_6px_20px_rgba(46,43,37,.18)] hover:bg-accent-600 active:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {busy ? `${STAGES[stage]}…` : "Generate the card"}
+          </button>
+        </div>
+
+        {error && <p className="text-accent-700">{error}</p>}
+
+        <div className="flex flex-col gap-[14px]">
           <div className="flex flex-wrap items-center gap-[10px] self-stretch">
             <Seg className="flex-[1_1_180px]">
               {(["front", "back"] as const).map((k) => (
@@ -172,7 +243,7 @@ export default function Home() {
             </Seg>
             <button
               onClick={saveBoth}
-              disabled={!result}
+              disabled={!active}
               className="flex flex-[1_1_180px] cursor-pointer items-center justify-center gap-2 rounded-full bg-accent px-4 py-[10px] font-heading text-[14px] text-bg hover:bg-accent-600 active:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-45"
             >
               <DownloadIcon />
@@ -187,9 +258,9 @@ export default function Home() {
             >
               {/* Front */}
               <Face>
-                {result ? (
+                {active ? (
                   <img
-                    src={result.front}
+                    src={active.front}
                     alt="Generated front artwork"
                     className="absolute inset-0 size-full object-cover"
                   />
@@ -204,7 +275,7 @@ export default function Home() {
                 )}
                 <div className="absolute bottom-[2.8cqw] left-[3.4cqw] flex items-center gap-2">
                   <span className="rounded-full bg-paper/90 px-[1.6cqw] py-[0.5cqw] text-[max(9px,1.72cqw)] text-neutral-800">
-                    {photo && !result ? "front · your photo" : "front · generated art"}
+                    {photo && !active ? "front · your photo" : "front · generated art"}
                   </span>
                   {busy && (
                     <span className="animate-rise rounded-full bg-accent px-[10px] py-[3px] text-[11px] text-bg">
@@ -228,9 +299,9 @@ export default function Home() {
 
               {/* Back */}
               <Face className="grid grid-cols-2 [transform:rotateY(180deg)]">
-                {result ? (
+                {active ? (
                   <img
-                    src={result.back}
+                    src={active.back}
                     alt="Generated back artwork"
                     className="absolute inset-0 size-full object-cover"
                   />
@@ -275,6 +346,38 @@ export default function Home() {
             </div>
           </div>
 
+          {/* Only worth showing once there's something to pick between: 3 styles
+              generate together, then this replaces the old up-front style choice. */}
+          {(results || busy) && (
+            <div className="grid grid-cols-3 gap-[10px]">
+              {STYLE_KEYS.map((k) => (
+                <button
+                  key={k}
+                  onClick={() => results && setActiveStyle(k)}
+                  disabled={!results}
+                  className={`relative aspect-[2480/1748] overflow-hidden rounded-lg border-2 ${
+                    results && activeStyle === k ? "border-accent" : "border-transparent"
+                  } ${results ? "cursor-pointer" : "cursor-default"}`}
+                >
+                  {results ? (
+                    <img
+                      src={results[k].front}
+                      alt={STYLES[k].label}
+                      className="absolute inset-0 size-full object-cover"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 overflow-hidden bg-surface">
+                      <div className="animate-sweep absolute inset-y-0 w-[45%] bg-linear-to-r from-transparent via-paper/70 to-transparent" />
+                    </div>
+                  )}
+                  <span className="absolute inset-x-0 bottom-0 truncate bg-paper/90 px-1 py-[3px] text-center text-[11px] text-neutral-800">
+                    {STYLES[k].label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Sits by the card, not in the sidebar, so nothing stands between the user
               and Generate — the face is only worth choosing once there is a card. */}
           <div className="hscroll -mx-[clamp(16px,4vw,32px)] flex items-center gap-2 overflow-x-auto px-[clamp(16px,4vw,32px)] pb-[2px]">
@@ -298,99 +401,6 @@ export default function Home() {
           </div>
         </div>
 
-        <div className="flex min-w-[min(100%,260px)] flex-[1_1_300px] flex-col gap-[22px]">
-          {!narrow && (
-            <section>
-              <Heading>1 · Your photo</Heading>
-              {/* The hidden input can't be a drop target, so the label is one. */}
-              <label
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setDragging(true);
-                }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setDragging(false);
-                  const f = e.dataTransfer.files[0];
-                  if (!f) return;
-                  if (!f.type.startsWith("image/")) return setError("That isn't an image file.");
-                  setError("");
-                  setPhoto(f);
-                }}
-                // :hover doesn't fire while a drag is in progress, so `dragging` stands in for it.
-                className={`flex cursor-pointer flex-row flex-wrap items-center justify-center gap-3 rounded-lg border-2 border-dashed bg-[color-mix(in_srgb,var(--color-surface)_55%,transparent)] p-[clamp(16px,3vw,22px)] text-center hover:border-accent hover:bg-accent-100 ${
-                  dragging ? "border-accent bg-accent-100" : "border-neutral-400"
-                }`}
-              >
-                <span className="grid size-[58px] flex-none place-items-center rounded-full bg-accent-200 text-accent-700">
-                  <ArrowUp />
-                </span>
-                <span className="flex min-w-[150px] flex-col gap-[2px] text-left">
-                  <span className="font-heading text-[15px]">
-                    {photo ? "Photo ready" : "Drop a photo"}
-                  </span>
-                  <span className="text-[12px] text-muted">
-                    {photo ? (
-                      photo.name
-                    ) : (
-                      <>
-                        or{" "}
-                        <span className="text-accent-700 underline underline-offset-[3px]">
-                          browse
-                        </span>{" "}
-                        · JPG, PNG, WebP
-                      </>
-                    )}
-                  </span>
-                </span>
-                <input
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-                  className="sr-only"
-                />
-              </label>
-            </section>
-          )}
-
-          <section>
-            <Heading>{narrow ? 1 : 2} · Style</Heading>
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-[10px]">
-              {(Object.keys(STYLES) as StyleKey[]).map((k) => (
-                <Pill key={k} on={style === k} onClick={() => setStyle(k)}>
-                  <span className="flex flex-none gap-1">
-                    {STYLE_CARDS[k].inks.map((c, i) => (
-                      <span
-                        key={i}
-                        // The cream ink needs an outline to read against the tinted card.
-                        className="h-[34px] w-[22px] rounded-[6px]"
-                        style={{
-                          background: c,
-                          boxShadow: i === 0 && k === "vintage" ? "inset 0 0 0 1px var(--color-neutral-400)" : undefined,
-                        }}
-                      />
-                    ))}
-                  </span>
-                  <span>
-                    <span className="block font-heading text-[15px]">{STYLES[k].label}</span>
-                    <span className="block text-[12px] text-muted">{STYLE_CARDS[k].blurb}</span>
-                  </span>
-                </Pill>
-              ))}
-            </div>
-          </section>
-
-          <button
-            onClick={generate}
-            disabled={busy}
-            className="sticky bottom-[12px] w-full cursor-pointer rounded-full bg-accent p-[14px] font-heading text-[15px] text-bg shadow-[0_6px_20px_rgba(46,43,37,.18)] hover:bg-accent-600 active:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-45"
-          >
-            {busy ? `${STAGES[stage]}…` : "Generate the card"}
-          </button>
-
-          {error && <p className="text-accent-700">{error}</p>}
-        </div>
       </main>
 
       <details className="mx-auto w-full max-w-[1440px] px-[clamp(16px,4vw,32px)] pt-[18px] pb-8 text-[14px]">
@@ -475,36 +485,6 @@ export default function Home() {
         </div>
       )}
     </div>
-  );
-}
-
-function Heading({ children }: { children: React.ReactNode }) {
-  return (
-    <h6 className="mb-[10px] font-heading text-[13px] tracking-[0.08em] text-accent-700 uppercase">
-      {children}
-    </h6>
-  );
-}
-
-function Pill({
-  on,
-  onClick,
-  children,
-}: {
-  on: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={on}
-      className={`flex cursor-pointer items-center gap-[10px] rounded-lg border-2 p-[14px] text-left ${
-        on ? "border-accent bg-accent-100" : "border-transparent bg-surface"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
