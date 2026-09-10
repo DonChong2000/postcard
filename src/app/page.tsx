@@ -11,26 +11,37 @@ const courier = Courier_Prime({ weight: "400", subsets: ["latin"] });
 
 // The face the message and address are written in — on screen and in the download.
 // `card` is the on-card size in cqw (container-relative, so it scales with the card at
-// any width — these are the old 640px-preview px sizes divided by 640);
-// `chip` is the size the name is set in on its own picker chip, unaffected by the card.
+// any width); `chip` is the size the name is set in on its own picker chip.
 const FONTS = {
-  script: { label: "Caveat", css: caveat.style.fontFamily, card: "3.13cqw", chip: 19 },
-  plain: { label: "Gloria Hallelujah", css: gloria.style.fontFamily, card: "2.03cqw", chip: 13 },
-  type: { label: "Courier Prime", css: courier.style.fontFamily, card: "2.19cqw", chip: 13 },
+  script: { label: "Caveat", css: caveat.style.fontFamily, card: "3.5cqw", chip: 18 },
+  plain: { label: "Gloria Hallelujah", css: gloria.style.fontFamily, card: "2.3cqw", chip: 12 },
+  type: { label: "Courier Prime", css: courier.style.fontFamily, card: "2.5cqw", chip: 12 },
 } as const;
 
 type FontKey = keyof typeof FONTS;
 type Result = { front: string; back: string };
 type Results = Record<StyleKey, Result>;
 
+const FONT_KEYS = Object.keys(FONTS) as FontKey[];
 const STYLE_KEYS = Object.keys(STYLES) as StyleKey[];
+const ADDRESS_LINES = ["Name", "Street", "City, postcode"];
 
 // The wait is 30-60s of nothing; naming what is happening beats a dead spinner. The API
 // generates all styles in parallel, so the stages are timed rather than reported.
 const STAGES = ["Reading your photo", "Printing the fronts", "Printing the backs", "Trimming to A6"];
 
+// ponytail: the model picker and dry run are dev tools, not part of the flow — an env
+// check keeps them out of the shipped UI without a second build of the page.
+const DEV = process.env.NODE_ENV === "development";
+
+const GHOST =
+  "flex-none cursor-pointer rounded-full px-[10px] py-[4px] text-[12px] text-accent-700 hover:bg-[rgba(198,113,57,.12)]";
+const PILL =
+  "cursor-pointer rounded-full bg-accent p-[13px] font-heading text-[15px] text-bg shadow-[0_6px_20px_rgba(46,43,37,.18)] hover:bg-accent-600 active:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none";
+
 export default function Home() {
   const [photo, setPhoto] = useState<File | null>(null);
+  const [info, setInfo] = useState("");
   const [font, setFont] = useState<FontKey>("script");
   const [model, setModel] = useState<ModelKey>("gemini-3.1-flash-image");
   const [face, setFace] = useState<"front" | "back">("front");
@@ -43,21 +54,29 @@ export default function Home() {
   const [dry, setDry] = useState("");
   const [dragging, setDragging] = useState(false);
   const [narrow, setNarrow] = useState(false);
-  const [writing, setWriting] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [fold, setFold] = useState(true);
+  const [saved, setSaved] = useState(false);
 
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const abort = useRef<AbortController | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
   const busy = stage >= 0;
   const addr = address.split("\n");
   const active = results ? results[activeStyle] : null;
+  // Step 4 has no state of its own — it unlocks with the results that step 3 needs too.
+  const step = !photo ? 1 : !results ? 2 : 3;
 
   // Preview of the chosen photo on the card front, before generation. Revoked whenever
   // `photo` changes so blob URLs don't pile up.
   const photoUrl = useMemo(() => (photo ? URL.createObjectURL(photo) : null), [photo]);
   useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
-  // Below 700px the card is too small to type into directly (Caveat lands near 11px), so
-  // focusing a card field instead opens a full-screen write sheet. False on first paint so
-  // SSR and hydration match, then synced from the media query on mount.
+  // Below 700px the rail doesn't fit beside a readable card, so the whole layout swaps:
+  // the card stays pinned to the top and one action is offered at a time. False on first
+  // paint so SSR and hydration match, then synced from the media query on mount.
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 700px)");
     const sync = () => setNarrow(mq.matches);
@@ -67,13 +86,19 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!writing) return;
+    if (!sheet) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setWriting(false);
+      if (e.key === "Escape") setSheet(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [writing]);
+  }, [sheet]);
+
+  useEffect(() => () => {
+    clearInterval(timer.current);
+    clearTimeout(savedTimer.current);
+    abort.current?.abort();
+  }, []);
 
   function setAddrLine(i: number, v: string) {
     const next = [addr[0] ?? "", addr[1] ?? "", addr[2] ?? ""];
@@ -81,32 +106,59 @@ export default function Home() {
     setAddress(next.join("\n"));
   }
 
-  // Never opens the sheet on a wide screen — there the field just takes focus normally.
-  function openWrite(e: React.FocusEvent<HTMLElement>) {
-    if (!narrow) return;
-    e.currentTarget.blur();
-    setFace("back");
-    setWriting(true);
+  // Picking a photo *is* the generate action — the old "chosen, now press Generate" beat
+  // was dead. Commitment stays reversible instead: Stop, Replace, Generate three more.
+  function pick(file: File | undefined | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) return setError("That isn't an image file.");
+    setPhoto(file);
+    setInfo("");
+    generate(file);
   }
 
-  async function generate() {
-    if (!photo) return setError("Pick a photo first.");
+  function stop() {
+    abort.current?.abort();
+    clearInterval(timer.current);
+    setStage(-1);
+  }
+
+  // Both "Replace" and "Start over": back to an empty card, keeping what was written.
+  function reset() {
+    stop();
+    setPhoto(null);
+    setResults(null);
+    setInfo("");
+    setError("");
+    setFace("front");
+    setSheet(false);
+    setSaved(false);
+  }
+
+  async function generate(file: File | null = photo) {
+    if (!file) return setError("Pick a photo first.");
+    abort.current?.abort();
+    const ac = new AbortController();
+    abort.current = ac;
     setError("");
     setResults(null);
+    setSaved(false);
+    setFace("front");
     setStage(0);
+    clearInterval(timer.current);
     timer.current = setInterval(
       () => setStage((s) => Math.min(s + 1, STAGES.length - 1)),
       12_000,
     );
     try {
-      const shrunk = await shrink(photo);
+      const { blob, px } = await shrink(file);
+      setInfo(`${px} px · ${Math.round(blob.size / 1024)} KB`);
       const entries = await Promise.all(
         STYLE_KEYS.map(async (k) => {
           const f = new FormData();
           f.set("style", k);
           f.set("model", model);
-          f.set("photo", shrunk, "photo.jpg");
-          const res = await fetch("/api/generate", { method: "POST", body: f });
+          f.set("photo", blob, "photo.jpg");
+          const res = await fetch("/api/generate", { method: "POST", body: f, signal: ac.signal });
           // A reverse proxy rejecting the upload answers with an HTML error page, and
           // res.json() on that throws "Unexpected token '<'" instead of anything useful.
           if (!res.headers.get("content-type")?.includes("json")) {
@@ -123,12 +175,16 @@ export default function Home() {
       );
       setResults(Object.fromEntries(entries) as Results);
       setActiveStyle(STYLE_KEYS[0]);
-      setFace("front");
     } catch (e) {
+      if (ac.signal.aborted) return;
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      clearInterval(timer.current);
-      setStage(-1);
+      // Aborted means either Stop (which already cleared) or a newer run that owns the
+      // timer now — either way this run must not touch the stage.
+      if (!ac.signal.aborted) {
+        clearInterval(timer.current);
+        setStage(-1);
+      }
     }
   }
 
@@ -152,20 +208,127 @@ export default function Home() {
       await renderBack(active.back, { message, address, font: FONTS[font].css }),
       "postcard-back.png",
     );
+    clearTimeout(savedTimer.current);
+    setSaved(true);
+    savedTimer.current = setTimeout(() => setSaved(false), 2600);
   }
 
-  return (
-    <div className="flex flex-1 flex-col">
-      <header className="mx-auto flex w-full max-w-[1440px] items-center gap-3 px-[clamp(16px,4vw,32px)] py-[clamp(12px,2.2vw,20px)]">
-        <span className="font-heading text-[clamp(16px,3.4vw,18px)]">Postcard</span>
-        <span className="ml-auto text-[12px] text-muted">A5 · 300 dpi</span>
-      </header>
+  const card = {
+    face,
+    fold,
+    busy,
+    active,
+    photoUrl,
+    message,
+    addr,
+    font,
+    onFlip: () => setFace((f) => (f === "front" ? "back" : "front")),
+  };
 
-      <main className="mx-auto flex w-full max-w-[880px] flex-1 flex-col gap-[16px] px-[clamp(16px,4vw,32px)] pt-2 pb-8">
-        <div className="flex flex-wrap items-stretch gap-[10px]">
-          {!narrow && (
-            // The hidden input can't be a drop target, so the label is one.
-            <label
+  const skeletons = (
+    <div className="grid grid-cols-3 gap-2">
+      {STYLE_KEYS.map((k) => (
+        <span
+          key={k}
+          className="relative m-[4px] block aspect-[2480/1748] overflow-hidden rounded-[12px] bg-surface"
+        >
+          <span className="animate-sweep absolute inset-y-0 w-[45%] bg-linear-to-r from-transparent via-paper/70 to-transparent" />
+        </span>
+      ))}
+    </div>
+  );
+
+  const progress = (
+    <div className="h-[6px] overflow-hidden rounded-full bg-surface">
+      <div
+        className="h-full rounded-full bg-accent transition-[width] duration-1000 ease-linear"
+        style={{ width: `${(stage + 1) * 25}%` }}
+      />
+    </div>
+  );
+
+  const styleGrid = results && (
+    <div className="grid grid-cols-3 gap-2">
+      {STYLE_KEYS.map((k) => (
+        <button
+          key={k}
+          onClick={() => {
+            setActiveStyle(k);
+            setFace("front");
+          }}
+          className={`flex cursor-pointer flex-col gap-[5px] rounded-[16px] border-2 p-[4px] ${
+            activeStyle === k ? "border-accent bg-accent-100" : "border-transparent"
+          }`}
+        >
+          <span className="relative block aspect-[2480/1748] overflow-hidden rounded-[12px] bg-surface">
+            <img
+              src={results[k].front}
+              alt={STYLES[k].label}
+              className="absolute inset-0 size-full object-cover"
+            />
+          </span>
+          <span
+            className={`text-center text-[11px] ${
+              activeStyle === k ? "text-accent-700" : "text-muted"
+            }`}
+          >
+            {STYLES[k].label.split(" ")[0]}
+          </span>
+        </button>
+      ))}
+    </div>
+  );
+
+  const chips = (
+    <div className="flex flex-none flex-wrap items-center gap-[6px]">
+      <span className="w-full text-[12px] text-muted">Handwriting</span>
+      {FONT_KEYS.map((k) => (
+        <button
+          key={k}
+          onClick={() => setFont(k)}
+          aria-pressed={font === k}
+          className={`inline-flex cursor-pointer items-center rounded-full border-2 px-[11px] py-[3px] leading-[1.3] whitespace-nowrap ${
+            font === k ? "border-accent bg-accent-100" : "border-transparent bg-surface"
+          }`}
+          style={{ fontFamily: FONTS[k].css, fontSize: FONTS[k].chip }}
+        >
+          {FONTS[k].label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const seg = (compact: boolean) => (
+    <div className="inline-flex overflow-hidden rounded-full border border-divider bg-bg">
+      {(["front", "back"] as const).map((k) => (
+        <button
+          key={k}
+          onClick={() => setFace(k)}
+          aria-pressed={face === k}
+          className={`cursor-pointer capitalize ${
+            compact ? "px-4 py-[7px] text-[12px]" : "px-[22px] py-[9px] text-[13px]"
+          } ${face === k ? "bg-accent text-bg" : "hover:bg-[rgba(32,30,29,.06)]"}`}
+        >
+          {k}
+        </button>
+      ))}
+    </div>
+  );
+
+  const desktop = (
+    <div className="grid h-dvh w-full grid-cols-[minmax(360px,400px)_1fr] overflow-hidden">
+      <div className="flex flex-col gap-4 overflow-y-auto border-r border-[rgba(32,30,29,.1)] px-[30px] pt-[26px] pb-[22px]">
+        <div className="flex flex-none items-baseline gap-[10px]">
+          <span className="font-heading text-[22px]">Postcard</span>
+          <span className="ml-auto text-[11px] tracking-[.06em] whitespace-nowrap text-muted uppercase">
+            A5 · 300 dpi
+          </span>
+        </div>
+
+        <Step n={1} on title="Your photo">
+          {!photo ? (
+            <button
+              onClick={() => fileInput.current?.click()}
               onDragOver={(e) => {
                 e.preventDefault();
                 setDragging(true);
@@ -174,454 +337,552 @@ export default function Home() {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragging(false);
-                const f = e.dataTransfer.files[0];
-                if (!f) return;
-                if (!f.type.startsWith("image/")) return setError("That isn't an image file.");
-                setError("");
-                setPhoto(f);
+                pick(e.dataTransfer.files[0]);
               }}
-              // :hover doesn't fire while a drag is in progress, so `dragging` stands in for it.
-              className={`flex flex-[2_1_260px] cursor-pointer flex-row flex-wrap items-center justify-center gap-3 rounded-lg border-2 border-dashed bg-[color-mix(in_srgb,var(--color-surface)_55%,transparent)] p-[clamp(12px,2vw,16px)] text-center hover:border-accent hover:bg-accent-100 ${
-                dragging ? "border-accent bg-accent-100" : "border-neutral-400"
+              // :hover doesn't fire while a drag is in progress, so `dragging` stands in.
+              className={`flex w-full cursor-pointer items-center gap-3 rounded-[20px] border-2 border-dashed p-[14px] text-left hover:border-accent hover:bg-accent-100 ${
+                dragging
+                  ? "border-accent bg-accent-100"
+                  : "border-neutral-400 bg-[rgba(235,221,197,.55)]"
               }`}
             >
-              <span className="grid size-[44px] flex-none place-items-center rounded-full bg-accent-200 text-accent-700">
-                <ArrowUp size={20} />
+              <span className="grid size-[40px] flex-none place-items-center rounded-full bg-accent-200 text-accent-700">
+                <ArrowUp />
               </span>
-              <span className="flex min-w-[150px] flex-col gap-[2px] text-left">
-                <span className="font-heading text-[15px]">
-                  {photo ? "Photo ready" : "Drop a photo"}
-                </span>
+              <span className="flex flex-col">
+                <span className="text-[14px] font-semibold">Drop a photo, or browse</span>
                 <span className="text-[12px] text-muted">
-                  {photo ? (
-                    photo.name
-                  ) : (
-                    <>
-                      or{" "}
-                      <span className="text-accent-700 underline underline-offset-[3px]">
-                        browse
-                      </span>{" "}
-                      · JPG, PNG, WebP
-                    </>
-                  )}
+                  Three styles start printing right away
                 </span>
               </span>
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-                className="sr-only"
+            </button>
+          ) : (
+            <div className="flex items-center gap-3 rounded-[20px] bg-surface py-[10px] pr-[14px] pl-[10px]">
+              <img
+                src={photoUrl ?? ""}
+                alt=""
+                className="h-[40px] w-[52px] flex-none rounded-[12px] object-cover"
               />
-            </label>
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-[13px] font-semibold">{photo.name}</span>
+                <span className="text-[12px] text-muted">{info || "reading…"}</span>
+              </span>
+              <button onClick={reset} className={GHOST}>
+                Replace
+              </button>
+            </div>
           )}
+          {error && <p className="text-[12px] text-accent-700">{error}</p>}
+        </Step>
 
+        <Step
+          n={2}
+          on={step >= 2}
+          title="Pick a style"
+          meta={results ? "3 generated" : busy ? "generating" : "3 at once"}
+        >
+          {busy ? (
+            <>
+              {skeletons}
+              {progress}
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] text-muted">{STAGES[stage]} · front and back</span>
+                <button onClick={stop} className={`${GHOST} ml-auto`}>
+                  Stop
+                </button>
+              </div>
+            </>
+          ) : results ? (
+            <>
+              {styleGrid}
+              <button
+                onClick={() => generate()}
+                className={`${GHOST} self-start whitespace-nowrap`}
+              >
+                Generate three more
+              </button>
+            </>
+          ) : (
+            <button onClick={() => generate()} disabled={!photo} className={PILL}>
+              Generate the card
+            </button>
+          )}
+        </Step>
+
+        <Step n={3} on={step >= 3} title="Write the back" meta={`${message.length} characters`}>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Write your message here…"
+            className="h-[72px] flex-none resize-none rounded-[16px] border border-divider bg-paper px-[14px] py-[12px] text-[14px] leading-[1.6] text-neutral-900"
+          />
+          <div className="flex flex-none flex-col gap-2">
+            {ADDRESS_LINES.map((ph, i) => (
+              <input
+                key={ph}
+                value={addr[i] ?? ""}
+                onChange={(e) => setAddrLine(i, e.target.value)}
+                placeholder={ph}
+                className="rounded-full border border-divider bg-paper px-4 py-[9px] text-[14px] text-neutral-900"
+              />
+            ))}
+          </div>
+          {chips}
+        </Step>
+
+        <Step n={4} on={!!results} title="Download">
           <button
-            onClick={generate}
-            disabled={busy}
-            className="flex-[1_1_200px] cursor-pointer rounded-full bg-accent p-[14px] font-heading text-[15px] text-bg shadow-[0_6px_20px_rgba(46,43,37,.18)] hover:bg-accent-600 active:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-45"
+            onClick={saveBoth}
+            disabled={!active}
+            className={`${PILL} flex items-center justify-center gap-2`}
           >
-            {busy ? `${STAGES[stage]}…` : "Generate the card"}
+            <DownloadIcon />
+            Download front + back
+          </button>
+          <span className="text-[12px] text-muted">
+            {saved
+              ? "Saved postcard-front.png and postcard-back.png"
+              : "Two PNGs, 2480 × 1748 px — prints A5, folds to A6."}
+          </span>
+        </Step>
+
+        <button
+          onClick={reset}
+          className="mt-auto flex-none cursor-pointer self-start rounded-full px-[10px] py-[4px] text-[12px] text-muted hover:bg-[rgba(32,30,29,.07)]"
+        >
+          Start over
+        </button>
+
+        {DEV && (
+          <details className="flex-none text-[14px]">
+            <summary className="w-fit cursor-pointer list-none rounded-full px-1 text-[12px] text-accent">
+              Dev panel
+            </summary>
+            <div className="mt-3 flex flex-col gap-3">
+              <select
+                value={model}
+                onChange={(e) => setModel(e.target.value as ModelKey)}
+                className="min-h-[40px] rounded-full border border-divider bg-surface px-[14px]"
+              >
+                {Object.entries(MODELS).map(([k, v]) => (
+                  <option key={k} value={k}>
+                    {v.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={dryRun}
+                className="cursor-pointer rounded-full border border-divider px-4 py-2 font-heading text-[14px]"
+              >
+                Dry run (no cost)
+              </button>
+              {dry && (
+                <pre className="max-h-60 overflow-auto rounded-md bg-surface p-3 text-xs whitespace-pre-wrap">
+                  {dry}
+                </pre>
+              )}
+            </div>
+          </details>
+        )}
+      </div>
+
+      <div className="flex min-h-0 flex-col items-center justify-center gap-[18px] bg-surface p-9">
+        <div className="flex items-center gap-[10px]">
+          {seg(false)}
+          <button
+            onClick={() => setFold((f) => !f)}
+            aria-pressed={fold}
+            className={`cursor-pointer rounded-full border px-[14px] py-[7px] text-[12px] whitespace-nowrap ${
+              fold ? "border-accent bg-accent-100 text-accent-700" : "border-divider text-muted"
+            }`}
+          >
+            Fold guide
           </button>
         </div>
+        <Card
+          {...card}
+          className="w-full max-w-[780px]"
+          perspective={1800}
+          shadow="shadow-[0_18px_44px_rgba(46,43,37,.28)]"
+        />
+        <span className="text-[12px] whitespace-nowrap text-muted">
+          {busy
+            ? `${STAGES[stage]}…`
+            : face === "front"
+              ? "Click the card to turn it over"
+              : "Message and address print as real text"}
+        </span>
+      </div>
+    </div>
+  );
 
-        {error && <p className="text-accent-700">{error}</p>}
+  const mobile = !photo
+    ? {
+        title: "Start with a photo",
+        hint: "One photo becomes three postcard fronts — printing starts as soon as you pick it.",
+        label: "Add a photo",
+        fn: () => fileInput.current?.click(),
+        on: true,
+      }
+    : busy
+      ? {
+          title: "Making three cards",
+          hint: `${STAGES[stage]}… about 40 seconds in all.`,
+          label: `${STAGES[stage]}…`,
+          fn: () => {},
+          on: false,
+        }
+      : !results
+        ? {
+            title: "Stopped",
+            hint: "Nothing was generated. Try again, or pick a different photo.",
+            label: "Generate the card",
+            fn: () => generate(),
+            on: true,
+          }
+        : {
+            title: "Pick a style, then write",
+            hint: "Tap a style above, then write the message.",
+            label: "Write the message",
+            fn: () => {
+              setFace("back");
+              setSheet(true);
+            },
+            on: true,
+          };
 
-        <div className="flex flex-col gap-[14px]">
-          <div className="flex flex-wrap items-center gap-[10px] self-stretch">
-            <Seg className="flex-[1_1_180px]">
-              {(["front", "back"] as const).map((k) => (
-                <SegOpt
-                  key={k}
-                  name="face"
-                  on={face === k}
-                  onSelect={() => setFace(k)}
-                  className="flex-1 justify-center px-[18px] py-[9px] capitalize"
-                >
-                  {k}
-                </SegOpt>
-              ))}
-            </Seg>
+  const phone = (
+    <div className="grid h-dvh w-full grid-rows-[auto_auto_1fr] overflow-hidden">
+      <div className="flex items-baseline gap-[10px] px-4 pt-[14px] pb-[10px]">
+        <span className="font-heading text-[17px]">Postcard</span>
+        <span className="ml-auto text-[11px] tracking-[.06em] whitespace-nowrap text-muted uppercase">
+          A5 · 300 dpi
+        </span>
+      </div>
+
+      <div className="flex flex-col items-center gap-[10px] bg-surface px-4 pt-[14px] pb-4">
+        <Card
+          {...card}
+          compact
+          className="w-full"
+          perspective={1400}
+          shadow="shadow-[0_10px_26px_rgba(46,43,37,.26)]"
+        />
+        <div className="flex items-center gap-[10px]">
+          {seg(true)}
+          <span className="text-[11px] whitespace-nowrap text-muted">
+            {busy
+              ? `${STAGES[stage]}…`
+              : face === "front"
+                ? "Tap to turn it over"
+                : "Real text, not generated"}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-col gap-3 overflow-y-auto px-4 pt-4 pb-5">
+        <div className="flex items-center gap-2">
+          {[1, 2, 3, 4].map((n) => (
+            <span
+              key={n}
+              className={`h-[6px] rounded-full transition-[width] duration-[250ms] ${
+                n === step ? "w-[18px]" : "w-[6px]"
+              } ${n <= step ? "bg-accent" : "bg-[#d3c7ae]"}`}
+            />
+          ))}
+          <span className="ml-[6px] text-[12px] text-muted">Step {step} of 4</span>
+        </div>
+
+        <span className="font-heading text-[19px]">{mobile.title}</span>
+        <span className="-mt-[6px] text-[13px] text-muted">{mobile.hint}</span>
+
+        {!photo && (
+          <div className="flex flex-col gap-[10px] rounded-[20px] bg-surface px-4 py-[14px]">
+            {[
+              "Add a photo — printing starts immediately.",
+              "Three fronts come back — vintage, watercolour, paper.",
+              "Write the back, download both sides to print.",
+            ].map((t, i) => (
+              <div key={t} className="flex items-baseline gap-[10px]">
+                <span className="text-[12px] font-semibold text-accent-700">{i + 1}</span>
+                <span className="text-[13px]">{t}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {busy && (
+          <>
+            {skeletons}
+            {progress}
+            <button onClick={stop} className={`${GHOST} self-start`}>
+              Stop
+            </button>
+          </>
+        )}
+
+        {styleGrid}
+
+        {error && <p className="text-[12px] text-accent-700">{error}</p>}
+
+        <div className="mt-auto flex flex-col gap-2 pt-3">
+          <button
+            onClick={mobile.fn}
+            disabled={!mobile.on}
+            className="cursor-pointer rounded-full bg-accent p-[14px] font-heading text-[16px] text-bg shadow-[0_6px_20px_rgba(46,43,37,.18)] disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none"
+          >
+            {mobile.label}
+          </button>
+          {results && (
             <button
               onClick={saveBoth}
-              disabled={!active}
-              className="flex flex-[1_1_180px] cursor-pointer items-center justify-center gap-2 rounded-full bg-accent px-4 py-[10px] font-heading text-[14px] text-bg hover:bg-accent-600 active:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-45"
+              className="cursor-pointer rounded-full border border-divider p-[13px] font-heading text-[15px]"
             >
-              <DownloadIcon />
-              Download both
+              {saved ? "Saved both PNGs" : "Download front + back"}
             </button>
-          </div>
-
-          <div className="grid w-full place-items-center [perspective:1800px]">
-            <div
-              className="relative aspect-[2480/1748] w-full max-w-[820px] transition-transform duration-700 ease-[cubic-bezier(.2,.7,.2,1)] [transform-style:preserve-3d]"
-              style={{ transform: `rotateY(${face === "back" ? 180 : 0}deg)` }}
-            >
-              {/* Front */}
-              <Face>
-                {active ? (
-                  <img
-                    src={active.front}
-                    alt="Generated front artwork"
-                    className="absolute inset-0 size-full object-cover"
-                  />
-                ) : photo && photoUrl ? (
-                  <img
-                    src={photoUrl}
-                    alt="Your uploaded photo"
-                    className="absolute inset-0 size-full object-cover opacity-15"
-                  />
-                ) : (
-                  <Sample src="/sample-front.jpg" watermark={!narrow} />
-                )}
-                <div className="absolute bottom-[2.8cqw] left-[3.4cqw] flex items-center gap-2">
-                  <span className="rounded-full bg-paper/90 px-[1.6cqw] py-[0.5cqw] text-[max(9px,1.72cqw)] text-neutral-800">
-                    {photo && !active ? "front · your photo" : "front · generated art"}
-                  </span>
-                  {busy && (
-                    <span className="animate-rise rounded-full bg-accent px-[10px] py-[3px] text-[11px] text-bg">
-                      {STAGES[stage]}…
-                    </span>
-                  )}
-                </div>
-                {busy && (
-                  <div className="animate-sweep absolute inset-y-0 w-[35%] bg-linear-to-r from-transparent via-paper/75 to-transparent" />
-                )}
-                {narrow && !photo && (
-                  <CardUpload
-                    setPhoto={setPhoto}
-                    dragging={dragging}
-                    setDragging={setDragging}
-                    setError={setError}
-                  />
-                )}
-                <FoldGuide />
-              </Face>
-
-              {/* Back */}
-              <Face className="grid grid-cols-2 [transform:rotateY(180deg)]">
-                {active ? (
-                  <img
-                    src={active.back}
-                    alt="Generated back artwork"
-                    className="absolute inset-0 size-full object-cover"
-                  />
-                ) : (
-                  <Sample src="/sample-back.jpg" />
-                )}
-                <textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onFocus={openWrite}
-                  placeholder="Write your message here…"
-                  className="writable relative resize-none leading-[1.7]"
-                  style={{
-                    padding: "20% 11% 10%",
-                    borderRight: "0",
-                    fontFamily: FONTS[font].css,
-                    fontSize: FONTS[font].card,
-                  }}
-                />
-                <div
-                  className="relative flex flex-col"
-                  style={{ padding: "14% 11% 10%", gap: "4%" }}
-                >
-                  <div
-                    className="mt-[2%] flex flex-col gap-[5%]"
-                    style={{ fontFamily: FONTS[font].css, fontSize: FONTS[font].card }}
-                  >
-                    {["Name", "Street", "City, postcode"].map((ph, i) => (
-                      <input
-                        key={ph}
-                        value={addr[i] ?? ""}
-                        onChange={(e) => setAddrLine(i, e.target.value)}
-                        onFocus={openWrite}
-                        placeholder={ph}
-                        className="writable min-h-[3.4cqw] border-b-[max(1px,0.24cqw)] border-neutral-400"
-                      />
-                    ))}
-                  </div>
-                </div>
-                <FoldGuide />
-              </Face>
-            </div>
-          </div>
-
-          {/* Only worth showing once there's something to pick between: 3 styles
-              generate together, then this replaces the old up-front style choice. */}
-          {(results || busy) && (
-            <div className="grid grid-cols-3 gap-[10px]">
-              {STYLE_KEYS.map((k) => (
-                <button
-                  key={k}
-                  onClick={() => results && setActiveStyle(k)}
-                  disabled={!results}
-                  className={`relative aspect-[2480/1748] overflow-hidden rounded-lg border-2 ${
-                    results && activeStyle === k ? "border-accent" : "border-transparent"
-                  } ${results ? "cursor-pointer" : "cursor-default"}`}
-                >
-                  {results ? (
-                    <img
-                      src={results[k].front}
-                      alt={STYLES[k].label}
-                      className="absolute inset-0 size-full object-cover"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 overflow-hidden bg-surface">
-                      <div className="animate-sweep absolute inset-y-0 w-[45%] bg-linear-to-r from-transparent via-paper/70 to-transparent" />
-                    </div>
-                  )}
-                  <span className="absolute inset-x-0 bottom-0 truncate bg-paper/90 px-1 py-[3px] text-center text-[11px] text-neutral-800">
-                    {STYLES[k].label}
-                  </span>
-                </button>
-              ))}
-            </div>
           )}
-
-          {/* Sits by the card, not in the sidebar, so nothing stands between the user
-              and Generate — the face is only worth choosing once there is a card. */}
-          <div className="hscroll -mx-[clamp(16px,4vw,32px)] flex items-center gap-2 overflow-x-auto px-[clamp(16px,4vw,32px)] pb-[2px]">
-            <span className="mr-1 flex-none text-[12px] text-muted">Handwriting</span>
-            {(Object.keys(FONTS) as FontKey[]).map((k) => (
-              <button
-                key={k}
-                onClick={() => setFont(k)}
-                aria-pressed={font === k}
-                className={`inline-flex flex-none cursor-pointer items-center rounded-full border-2 px-[14px] py-[5px] leading-[1.3] ${
-                  font === k ? "border-accent bg-accent-100" : "border-transparent bg-surface"
-                }`}
-                style={{ fontFamily: FONTS[k].css, fontSize: FONTS[k].chip }}
-              >
-                {FONTS[k].label}
-              </button>
-            ))}
-            <span className="flex-none pr-1 text-[12px] text-muted">
-              {narrow ? "Tap the card to write full screen" : "Click to turn it over"}
-            </span>
-          </div>
         </div>
+      </div>
 
-      </main>
-
-      <details className="mx-auto w-full max-w-[1440px] px-[clamp(16px,4vw,32px)] pt-[18px] pb-8 text-[14px]">
-        <summary className="ml-auto w-fit cursor-pointer list-none rounded-full px-1 text-[12px] text-accent hover:bg-[color-mix(in_srgb,var(--color-accent)_10%,transparent)]">
-          Dev panel
-        </summary>
-        <div className="mt-3 flex flex-wrap items-end gap-3">
-          <label className="flex flex-[1_1_240px] flex-col gap-1">
-            Model
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value as ModelKey)}
-              className="min-h-[40px] w-full rounded-full border border-divider bg-surface px-[14px] py-1.5"
-            >
-              {Object.entries(MODELS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            onClick={dryRun}
-            className="flex-[1_1_160px] cursor-pointer rounded-full border border-divider px-4 py-2 font-heading text-[14px]"
-          >
-            Dry run (no cost)
-          </button>
-        </div>
-        {dry && (
-          <pre className="mt-3 max-h-80 overflow-auto rounded-md bg-surface p-3 text-xs whitespace-pre-wrap">
-            {dry}
-          </pre>
-        )}
-      </details>
-
-      {writing && (
+      {/* A sheet, not a takeover: the card stays visible above it and updates as you type. */}
+      {sheet && (
         <div
-          className="fixed inset-0 z-50 flex flex-col gap-3 bg-[rgba(32,30,29,.55)] p-4"
+          className="fixed inset-0 z-50 flex flex-col justify-end bg-[rgba(32,30,29,.45)]"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setWriting(false);
+            if (e.target === e.currentTarget) setSheet(false);
           }}
         >
-          <div className="flex items-center gap-3">
-            <span className="font-heading text-[15px] text-bg">Write the back</span>
-            <button
-              onClick={() => setWriting(false)}
-              className="ml-auto cursor-pointer rounded-full bg-accent px-[18px] py-2 font-heading text-[14px] text-bg"
-            >
-              Done
-            </button>
-          </div>
-          <div className="relative flex aspect-[1748/2480] w-full max-h-[calc(100dvh-120px)] flex-col overflow-hidden rounded-[6px] bg-paper shadow-[0_12px_32px_rgba(46,43,37,.35)]">
-            <img
-              src="/sample-back.jpg"
-              alt=""
-              className="pointer-events-none absolute inset-0 size-full object-fill opacity-15"
-            />
+          <div className="animate-rise flex flex-col gap-3 rounded-t-[28px] bg-paper p-[18px] pb-[22px]">
+            <div className="flex items-center gap-3">
+              <span className="flex-none font-heading text-[17px] whitespace-nowrap">
+                Write the back
+              </span>
+              <button
+                onClick={() => setSheet(false)}
+                className="ml-auto cursor-pointer rounded-full bg-accent px-5 py-[9px] font-heading text-[14px] text-bg"
+              >
+                Done
+              </button>
+            </div>
+            {/* 16px everywhere in here, or iOS zooms the viewport on focus. */}
             <textarea
               autoFocus
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder="Write your message here…"
-              className="writable relative flex-1 resize-none leading-[1.7]"
-              style={{ padding: "9% 9% 4%", fontFamily: FONTS[font].css, fontSize: "6.2cqw" }}
+              className="h-[120px] resize-none rounded-[16px] border border-divider bg-bg px-[14px] py-3 text-[16px] leading-[1.6] text-neutral-900"
             />
-            <div
-              className="relative flex flex-col"
-              style={{ padding: "0 9% 9%", gap: "3%", fontFamily: FONTS[font].css, fontSize: "6.2cqw" }}
-            >
-              {["Name", "Street", "City, postcode"].map((ph, i) => (
-                <input
-                  key={ph}
-                  value={addr[i] ?? ""}
-                  onChange={(e) => setAddrLine(i, e.target.value)}
-                  placeholder={ph}
-                  className="writable min-h-[44px] border-b-[1.5px] border-neutral-400"
-                  style={{ padding: "4px 2px" }}
-                />
-              ))}
-            </div>
+            {ADDRESS_LINES.map((ph, i) => (
+              <input
+                key={ph}
+                value={addr[i] ?? ""}
+                onChange={(e) => setAddrLine(i, e.target.value)}
+                placeholder={ph}
+                className="min-h-[44px] rounded-full border border-divider bg-bg px-4 py-[10px] text-[16px] text-neutral-900"
+              />
+            ))}
+            {chips}
           </div>
         </div>
       )}
     </div>
   );
-}
 
-function Seg({ className = "", children }: { className?: string; children: React.ReactNode }) {
   return (
-    <div className={`inline-flex overflow-hidden rounded-full border border-divider ${className}`}>
-      {children}
-    </div>
+    <>
+      {/* One picker for both layouts: the desktop drop target and the phone primary
+          button both click it. Clearing the value lets the same file be re-picked. */}
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        onChange={(e) => {
+          pick(e.target.files?.[0]);
+          e.target.value = "";
+        }}
+        className="sr-only"
+      />
+      {narrow ? phone : desktop}
+    </>
   );
 }
 
-function SegOpt({
-  name,
+// A numbered row in the flow rail. `on` drives both the badge fill and whether the step
+// is reachable yet — a step you cannot act on dims out rather than disappearing, so the
+// shape of the whole flow stays visible from the first screen.
+function Step({
+  n,
   on,
-  onSelect,
-  className = "",
+  title,
+  meta,
   children,
 }: {
-  name: string;
+  n: number;
   on: boolean;
-  onSelect: () => void;
-  className?: string;
+  title: string;
+  meta?: string;
   children: React.ReactNode;
 }) {
   return (
-    <label
-      className={`inline-flex cursor-pointer items-center px-3 py-[7px] text-[13px] not-first:border-l not-first:border-divider has-[:checked]:bg-accent has-[:checked]:text-bg not-has-[:checked]:hover:bg-[color-mix(in_srgb,var(--color-text)_7%,transparent)] has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2 has-[:focus-visible]:outline-accent ${className}`}
-    >
-      <input
-        type="radio"
-        name={name}
-        checked={on}
-        onChange={onSelect}
-        className="absolute size-0 opacity-0"
-      />
-      {children}
-    </label>
-  );
-}
-
-// Both card faces get this so everything drawn on them can size itself in cqw and scale
-// with the card at any width, from a 340px phone to an 820px desktop card.
-function Face({ className = "", children }: { className?: string; children: React.ReactNode }) {
-  return (
     <div
-      className={`absolute inset-0 @container overflow-hidden bg-paper shadow-lg [backface-visibility:hidden] ${className}`}
+      className={`flex flex-none gap-[14px] transition-opacity duration-[250ms] ${
+        on ? "" : "pointer-events-none opacity-45"
+      }`}
     >
-      {children}
+      <div
+        className={`mt-[2px] grid size-[26px] flex-none place-items-center rounded-full text-[12px] font-semibold ${
+          on ? "bg-accent text-bg" : "bg-surface text-[rgba(32,30,29,.6)]"
+        }`}
+      >
+        {n}
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex items-baseline gap-2">
+          <span className="flex-none font-heading text-[15px] whitespace-nowrap">{title}</span>
+          {meta && (
+            <span className="ml-auto text-[12px] whitespace-nowrap text-muted">{meta}</span>
+          )}
+        </div>
+        {children}
+      </div>
     </div>
   );
 }
 
-// Stands in until there is a real card: an example postcard faded right back, watermarked
-// so it never reads as the user's own. Never exported — the canvas renderers don't see it.
-// `watermark` is turned off on a narrow front face, where the on-card upload pill sits in
-// its place — the two would otherwise overlap.
-function Sample({ src, watermark = true }: { src: string; watermark?: boolean }) {
-  return (
-    <div className="pointer-events-none absolute inset-0 select-none @container">
-      {/* fill, not cover: the back sample's art is in its corners, which cover would crop off. */}
-      <img src={src} alt="" className="size-full object-fill opacity-15" />
-      {watermark && (
-        <span className="absolute inset-0 grid place-items-center font-heading text-[14cqw] tracking-[0.18em] text-neutral-500/40">
-          SAMPLE
-        </span>
-      )}
-    </div>
-  );
-}
-
-// Narrow-only, and only until a photo is picked: replaces the sidebar's step-1 section,
-// so the card front itself is the drop target. No scrim or inner box — the dashed outline
-// (real drag) and hover widen from 0 so the sample art stays visible underneath, same as
-// the step-1 dropzone it replaces. Once a photo is set the preview itself takes over and
-// this is unmounted, so there's no "picked" state to render here.
-function CardUpload({
-  setPhoto,
-  dragging,
-  setDragging,
-  setError,
+// Both faces are `@container`s, so everything drawn on them sizes itself in cqw and
+// scales with the card at any width — one component for the 780px desktop card and the
+// phone one. `compact` drops the watermark and caption pill, which are noise at 358px.
+function Card({
+  className = "",
+  perspective,
+  shadow,
+  compact = false,
+  face,
+  fold,
+  busy,
+  active,
+  photoUrl,
+  message,
+  addr,
+  font,
+  onFlip,
 }: {
-  setPhoto: (f: File | null) => void;
-  dragging: boolean;
-  setDragging: (b: boolean) => void;
-  setError: (s: string) => void;
+  className?: string;
+  perspective: number;
+  shadow: string;
+  compact?: boolean;
+  face: "front" | "back";
+  fold: boolean;
+  busy: boolean;
+  active: Result | null;
+  photoUrl: string | null;
+  message: string;
+  addr: string[];
+  font: FontKey;
+  onFlip: () => void;
 }) {
+  const ink = { fontFamily: FONTS[font].css, fontSize: FONTS[font].card };
+  const faceClass = `absolute inset-0 @container overflow-hidden rounded-[4px] bg-paper [backface-visibility:hidden] ${shadow}`;
   return (
-    <label
-      onDragOver={(e) => {
-        e.preventDefault();
-        setDragging(true);
-      }}
-      onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault();
-        setDragging(false);
-        const f = e.dataTransfer.files[0];
-        if (!f) return;
-        if (!f.type.startsWith("image/")) return setError("That isn't an image file.");
-        setError("");
-        setPhoto(f);
-      }}
-      className="absolute inset-0 flex cursor-pointer flex-col items-center justify-center gap-[2.2cqw] text-center outline-0 outline-dashed outline-accent hover:[outline-width:max(2px,0.45cqw)]"
-      style={{
-        outlineOffset: "-2.6cqw",
-        outlineWidth: dragging ? "max(2px, 0.45cqw)" : undefined,
-      }}
-    >
-      <span className="inline-flex items-center gap-[0.5em] rounded-full bg-accent px-[4.6cqw] py-[2.2cqw] font-heading text-[max(13px,3.4cqw)] text-bg shadow-[0_6px_20px_rgba(46,43,37,.22)]">
-        <ArrowUp size="1.1em" />
-        Add a photo
-      </span>
-      <span className="text-[max(10px,2.5cqw)] text-[rgba(32,30,29,.6)]">
-        or drop one on the card · JPG, PNG, WebP
-      </span>
-      <input
-        type="file"
-        accept="image/png,image/jpeg,image/webp"
-        onChange={(e) => setPhoto(e.target.files?.[0] ?? null)}
-        className="sr-only"
-      />
-    </label>
+    <div className={className} style={{ perspective: `${perspective}px` }}>
+      <div
+        onClick={onFlip}
+        className="relative aspect-[2480/1748] w-full cursor-pointer transition-transform duration-700 ease-[cubic-bezier(.2,.7,.2,1)] [transform-style:preserve-3d]"
+        style={{ transform: `rotateY(${face === "back" ? 180 : 0}deg)` }}
+      >
+        <div className={faceClass}>
+          {active ? (
+            <img
+              src={active.front}
+              alt="Generated front artwork"
+              className="absolute inset-0 size-full object-cover"
+            />
+          ) : photoUrl ? (
+            <img
+              src={photoUrl}
+              alt="Your uploaded photo"
+              className="absolute inset-0 size-full object-cover opacity-15"
+            />
+          ) : (
+            // Stands in until there is a real card, watermarked so it never reads as the
+            // user's own. Never exported — the canvas renderers don't see it.
+            <div className="pointer-events-none absolute inset-0 select-none">
+              {/* fill, not cover: the sample's art is in its corners, which cover crops. */}
+              <img src="/sample-front.jpg" alt="" className="size-full object-fill opacity-[.13]" />
+              {!compact && (
+                <span className="absolute inset-0 grid place-items-center font-heading text-[13cqw] tracking-[.18em] text-neutral-500/40">
+                  SAMPLE
+                </span>
+              )}
+            </div>
+          )}
+          {busy && (
+            <div className="animate-sweep absolute inset-y-0 w-[35%] bg-linear-to-r from-transparent via-paper/75 to-transparent" />
+          )}
+          {!compact && (
+            <span className="absolute bottom-[2.4cqw] left-[2.4cqw] rounded-full bg-paper/90 px-3 py-1 text-[12px] text-neutral-800">
+              {active ? "front · generated art" : photoUrl ? "front · your photo" : "front · sample"}
+            </span>
+          )}
+          <FoldGuide on={fold} />
+        </div>
+
+        <div className={`${faceClass} grid grid-cols-2 [transform:rotateY(180deg)]`}>
+          {active ? (
+            <img
+              src={active.back}
+              alt="Generated back artwork"
+              className="absolute inset-0 size-full object-cover"
+            />
+          ) : (
+            <img
+              src="/sample-back.jpg"
+              alt=""
+              className="pointer-events-none absolute inset-0 size-full object-fill opacity-15"
+            />
+          )}
+          <div
+            className="relative overflow-hidden px-[7cqw] pt-[10cqw] pb-[6cqw] leading-[1.7] whitespace-pre-wrap text-neutral-900"
+            style={ink}
+          >
+            {message}
+          </div>
+          <div className="relative flex flex-col gap-[3cqw] px-[7cqw] pt-[7cqw] pb-[6cqw]">
+            <div className="h-[17cqw] w-[14cqw] self-end rounded-[1cqw] border-[.3cqw] border-dashed border-[rgba(32,30,29,.25)]" />
+            <div className="flex flex-col gap-[4cqw] text-neutral-900" style={ink}>
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className="min-h-[3.4cqw] overflow-hidden border-b-[max(1px,0.22cqw)] border-neutral-400 pb-[.6cqw] whitespace-nowrap"
+                >
+                  {addr[i] ?? ""}
+                </div>
+              ))}
+            </div>
+          </div>
+          <FoldGuide on={fold} />
+        </div>
+      </div>
+    </div>
   );
 }
 
 // Preview only — a CSS overlay, never part of the exported PNG.
-function FoldGuide() {
+function FoldGuide({ on }: { on: boolean }) {
   return (
-    <div className="pointer-events-none absolute inset-y-0 left-1/2 w-0 border-l-[max(1px,0.3cqw)] border-dashed border-fold" />
+    <div
+      className={`pointer-events-none absolute inset-y-0 left-1/2 w-0 border-l-[max(1px,0.24cqw)] border-dashed border-fold transition-opacity duration-200 ${
+        on ? "opacity-100" : "opacity-0"
+      }`}
+    />
   );
 }
 
-function ArrowUp({ size = 26 }: { size?: number | string }) {
+function ArrowUp() {
   return (
     <svg
-      width={size}
-      height={size}
+      width="18"
+      height="18"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -656,13 +917,16 @@ function DownloadIcon() {
 
 // Phone photos run 3-12MB and the models resample to about 1024px anyway, so uploading
 // the original only buys a reverse-proxy size rejection. 1600px keeps it under ~400KB.
-async function shrink(file: File, max = 1600): Promise<Blob> {
+// Returns the longest edge too — step 1 shows what was actually sent.
+async function shrink(file: File, max = 1600): Promise<{ blob: Blob; px: number }> {
   const bmp = await createImageBitmap(file);
-  const scale = Math.min(1, max / Math.max(bmp.width, bmp.height));
-  if (scale === 1 && file.size < 1_000_000) return file;
+  const longest = Math.max(bmp.width, bmp.height);
+  const scale = Math.min(1, max / longest);
+  const px = Math.round(longest * scale);
+  if (scale === 1 && file.size < 1_000_000) return { blob: file, px };
   const c = document.createElement("canvas");
   c.width = Math.round(bmp.width * scale);
   c.height = Math.round(bmp.height * scale);
   c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
-  return new Promise((r) => c.toBlob((b) => r(b!), "image/jpeg", 0.9));
+  return new Promise((r) => c.toBlob((b) => r({ blob: b!, px }), "image/jpeg", 0.9));
 }

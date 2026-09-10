@@ -9,9 +9,13 @@ with the address lines and message drawn over it in real text — image models c
 render legible lettering, so nothing that has to be read is generated. Both are
 composed and downloaded in the browser; nothing is stored.
 
-The card flips between front and back on screen, and the message and address are typed
-directly on it in one of three handwriting faces. The preview is plain DOM over the
-generated images; `src/lib/canvas.ts` composes the real PNGs only on download.
+Picking a photo starts the generation immediately — there is no confirm step, and the
+commitment is undone with Stop or Replace instead. Wide screens put a numbered flow rail
+beside a large card stage; under 700px the card stays pinned at the top with one action
+at a time and the writing moves into a bottom sheet. Either way the card is a live
+preview — the message and address are typed beside it, in one of three handwriting
+faces, and appear on it as you type. The preview is plain DOM over the generated images;
+`src/lib/canvas.ts` composes the real PNGs only on download.
 
 There is one size: an A5 sheet (210 x 148 mm, 2480 x 1748 px at 300dpi) that folds down
 the middle into an A6 card.
@@ -31,7 +35,8 @@ Open [http://localhost:3000](http://localhost:3000) with your browser.
 
 ## Image generation
 
-The model is picked in the dev panel at the bottom of the page:
+The model is picked in the dev panel at the foot of the flow rail, which only renders
+in development:
 
 | Model | Path | Cost per image |
 |---|---|---|

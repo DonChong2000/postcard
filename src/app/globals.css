@@ -54,20 +54,12 @@ body {
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
 ::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
 
-/* Text written directly on the card: a real input that looks like ink on paper.
-   ponytail: one class beats repeating five arbitrary-value variants inline. */
-.writable {
-  background: transparent;
-  color: var(--color-neutral-900);
-  caret-color: var(--color-accent);
+/* The card is a live preview now — nothing is typed on it directly, so the old
+   .writable / .hscroll rules went with the layout that needed them. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
-.writable::placeholder { color: var(--color-neutral-500); }
-.writable:focus {
-  outline: none;
-  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
-}
-
-/* The handwriting-picker scroller bleeds to the screen edge and scrolls horizontally;
-   a visible scrollbar there would look like a stray UI element. */
-.hscroll { scrollbar-width: none; }
-.hscroll::-webkit-scrollbar { display: none; }
