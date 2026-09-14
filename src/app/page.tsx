@@ -1003,13 +1003,13 @@ function Card({
               alt="Generated back artwork"
               className="absolute inset-0 size-full object-cover"
             />
-          ) : (
+          ) : !active ? (
             <img
               src="/sample-back.jpg"
               alt=""
               className="pointer-events-none absolute inset-0 size-full object-cover opacity-15"
             />
-          )}
+          ) : null}
           <div
             className="relative overflow-hidden px-[7cqw] pt-[10cqw] pb-[6cqw] leading-[1.7] whitespace-pre-wrap text-neutral-900"
             style={ink}
