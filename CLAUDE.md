@@ -44,8 +44,9 @@ is small and the free parts are testable by eye.
   in-memory.
 - **`src/app/api/polish/route.ts`** — the ✨ in the message box. One `generateText` call
   on `gemini-flash-lite-latest`, plain text in and out, no rate limit of its own.
-- **`src/app/page.tsx`** — the whole UI, one client component. Picking a photo *is* the
-  generate action (no confirm step; Stop/Replace undo it). The card preview is plain DOM
+- **`src/app/page.tsx`** — the whole UI, one client component. Picking a photo
+  (browse, or a drop anywhere on the window) only loads it; "Generate the card" is what
+  spends money, and Stop/Replace undo it. The card preview is plain DOM
   over the returned images, both faces are `@container`s sized in `cqw`, so one component
   serves the 780px desktop card and the 358px phone one. Under 700px the layout swaps to
   a pinned card + bottom sheet. Uploads are downscaled to 1600px client-side by `shrink()`.

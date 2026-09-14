@@ -140,7 +140,9 @@ export default function Home() {
     if (!file) return;
     if (!file.type.startsWith("image/")) return setError("That isn't an image file.");
     setPhoto(file);
-    setInfo("");
+    // The px-after-downscale line only exists once generate() has shrunk it; until then
+    // the original size is what there is to show, and "reading…" would sit there forever.
+    setInfo(`${Math.round(file.size / 1024)} KB`);
   }
 
   function stop() {
@@ -369,6 +371,25 @@ export default function Home() {
     onFlip: () => setFace((f) => (f === "front" ? "back" : "front")),
   };
 
+  // Both layouts show what is about to be generated: desktop in step 1, phone in the step-2
+  // panel, where the pinned card only shows the photo as a faint wash.
+  const photoRow = photo && (
+    <div className="flex items-center gap-3 rounded-[20px] bg-surface py-[10px] pr-[14px] pl-[10px]">
+      <img
+        src={photoUrl ?? ""}
+        alt=""
+        className="h-[40px] w-[52px] flex-none rounded-[12px] object-cover"
+      />
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-[13px] font-semibold">{photo.name}</span>
+        <span className="text-[12px] text-muted">{info || "reading…"}</span>
+      </span>
+      <button onClick={reset} className={GHOST}>
+        Replace
+      </button>
+    </div>
+  );
+
   const skeletons = (
     <div className="grid grid-cols-3 gap-2">
       {STYLE_KEYS.map((k) => (
@@ -491,25 +512,12 @@ export default function Home() {
               <span className="flex flex-col">
                 <span className="text-[14px] font-semibold">Drop a photo, or browse</span>
                 <span className="text-[12px] text-muted">
-                  Three styles start printing right away
+                  Three styles, then you press Generate
                 </span>
               </span>
             </button>
           ) : (
-            <div className="flex items-center gap-3 rounded-[20px] bg-surface py-[10px] pr-[14px] pl-[10px]">
-              <img
-                src={photoUrl ?? ""}
-                alt=""
-                className="h-[40px] w-[52px] flex-none rounded-[12px] object-cover"
-              />
-              <span className="flex min-w-0 flex-1 flex-col">
-                <span className="truncate text-[13px] font-semibold">{photo.name}</span>
-                <span className="text-[12px] text-muted">{info || "reading…"}</span>
-              </span>
-              <button onClick={reset} className={GHOST}>
-                Replace
-              </button>
-            </div>
+            photoRow
           )}
           {error && <p className="text-[12px] text-accent-700">{error}</p>}
         </Step>
@@ -760,7 +768,7 @@ export default function Home() {
         {!photo && (
           <div className="flex flex-col gap-[10px] rounded-[20px] bg-surface px-4 py-[14px]">
             {[
-              "Add a photo — printing starts immediately.",
+              "Add a photo, then press Generate.",
               "Three fronts come back — paper, watercolour, vintage.",
               "Write the back, download both sides to print.",
             ].map((t, i) => (
@@ -771,6 +779,8 @@ export default function Home() {
             ))}
           </div>
         )}
+
+        {!results && !busy && photoRow}
 
         {busy && (
           <>

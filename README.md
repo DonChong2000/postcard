@@ -11,8 +11,8 @@ put behind that text with the dev panel's "Generate back too" toggle, at twice t
 composed in the browser and downloaded for free; a file is only stored if you buy a
 printed one.
 
-Picking a photo starts the generation immediately — there is no confirm step, and the
-commitment is undone with Stop or Replace instead. Wide screens put a numbered flow rail
+A photo is picked by browsing or by dropping it anywhere on the window; generating is a
+separate press, because every generation costs money. Stop and Replace undo it. Wide screens put a numbered flow rail
 beside a large card stage; under 700px the card stays pinned at the top with one action
 at a time and the writing moves into a bottom sheet. Either way the card is a live
 preview — the message and address are typed beside it, in one of three handwriting
