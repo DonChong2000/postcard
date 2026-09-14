@@ -602,7 +602,7 @@ export default function Home() {
 
         {DEV && (
           <details className="flex-none text-[14px]">
-            <summary className="w-fit cursor-pointer list-none rounded-full px-1 text-[12px] text-accent">
+            <summary className="w-fit cursor-pointer list-none rounded-full px-[10px] text-[12px] text-accent">
               Dev panel
             </summary>
             <div className="mt-3 flex flex-col gap-3">
