@@ -32,7 +32,7 @@ const STAGES = ["Reading your photo", "Printing the fronts", "Printing the backs
 
 // ponytail: the model picker and dry run are dev tools, not part of the flow — an env
 // check keeps them out of the shipped UI without a second build of the page.
-const DEV = process.env.NODE_ENV === "development";
+const DEV = true; // temporary: forced on for postcard.donchong.com, revert before shipping
 
 const GHOST =
   "flex-none cursor-pointer rounded-full px-[10px] py-[4px] text-[12px] text-accent-700 hover:bg-[rgba(198,113,57,.12)]";
