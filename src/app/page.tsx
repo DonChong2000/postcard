@@ -39,6 +39,11 @@ const GHOST =
 const PILL =
   "cursor-pointer rounded-full bg-accent p-[13px] font-heading text-[15px] text-bg shadow-[0_6px_20px_rgba(46,43,37,.18)] hover:bg-accent-600 active:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-45 disabled:shadow-none";
 
+// ponytail: the real amount lives on the Stripe price. This label is a hand-kept copy —
+// change STRIPE_PRICE_ID and you change this too, or the button lies about the total.
+const PRICE_LABEL = "HK$50";
+const OUTLINE = "cursor-pointer rounded-full border border-divider p-[13px] font-heading text-[15px] disabled:cursor-not-allowed disabled:opacity-45";
+
 export default function Home() {
   const [photo, setPhoto] = useState<File | null>(null);
   const [info, setInfo] = useState("");
@@ -61,6 +66,7 @@ export default function Home() {
   const [sheet, setSheet] = useState(false);
   const [fold, setFold] = useState(true);
   const [saved, setSaved] = useState(false);
+  const [buying, setBuying] = useState(false);
 
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -104,20 +110,37 @@ export default function Home() {
     abort.current?.abort();
   }, []);
 
+  // The dashed box is the only drop target, and it only exists before a photo is picked —
+  // everywhere else (the phone layout, a replace, a near miss) the browser navigates to
+  // the file instead. So the whole window takes the drop. `pick` is a new function every
+  // render, so this rebinds every render; two listener swaps is cheaper than a ref dance.
+  useEffect(() => {
+    const over = (e: DragEvent) => e.preventDefault();
+    const drop = (e: DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      pick(e.dataTransfer?.files[0]);
+    };
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+    };
+  }, [pick]);
+
   function setAddrLine(i: number, v: string) {
     const next = [addr[0] ?? "", addr[1] ?? "", addr[2] ?? ""];
     next[i] = v;
     setAddress(next.join("\n"));
   }
 
-  // Picking a photo *is* the generate action — the old "chosen, now press Generate" beat
-  // was dead. Commitment stays reversible instead: Stop, Replace, Generate three more.
+  // Picking only loads the photo. Generating costs money, so it stays behind the button.
   function pick(file: File | undefined | null) {
     if (!file) return;
     if (!file.type.startsWith("image/")) return setError("That isn't an image file.");
     setPhoto(file);
     setInfo("");
-    generate(file);
   }
 
   function stop() {
@@ -216,6 +239,33 @@ export default function Home() {
     clearTimeout(savedTimer.current);
     setSaved(true);
     savedTimer.current = setTimeout(() => setSaved(false), 2600);
+  }
+
+  // Same two canvases Download produces, parked in R2 so the print shop has a URL to fetch.
+  // Stripe owns everything past the redirect.
+  async function buy() {
+    if (!active || buying) return;
+    setBuying(true);
+    setError("");
+    try {
+      const [artUrl, backUrl] = await Promise.all([
+        upload(await renderFront(active.front)),
+        upload(await renderBack(active.back, { message, address, font: FONTS[font].css })),
+      ]);
+      const res = await fetch("/api/checkout", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ artUrl, backUrl }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+      location.href = json.url;
+      // No setBuying(false) here: we are navigating away, and re-enabling the button first
+      // just invites a second click that starts a second session.
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "could not start checkout");
+      setBuying(false);
+    }
   }
 
   // Dev: fills in the sample art as if a generation had returned it, so the writing,
@@ -428,11 +478,6 @@ export default function Home() {
                 setDragging(true);
               }}
               onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragging(false);
-                pick(e.dataTransfer.files[0]);
-              }}
               // :hover doesn't fire while a drag is in progress, so `dragging` stands in.
               className={`flex w-full cursor-pointer items-center gap-3 rounded-[20px] border-2 border-dashed p-[14px] text-left hover:border-accent hover:bg-accent-100 ${
                 dragging
@@ -529,6 +574,9 @@ export default function Home() {
           >
             <DownloadIcon />
             Download front + back
+          </button>
+          <button onClick={buy} disabled={!active || buying} className={OUTLINE}>
+            {buying ? "Starting checkout…" : `Buy a printed copy — ${PRICE_LABEL}`}
           </button>
           <span className="text-[12px] text-muted">
             {saved
@@ -631,7 +679,7 @@ export default function Home() {
   const mobile = !photo
     ? {
         title: "Start with a photo",
-        hint: "One photo becomes three postcard fronts — printing starts as soon as you pick it.",
+        hint: "One photo becomes three postcard fronts.",
         label: "Add a photo",
         fn: () => fileInput.current?.click(),
         on: true,
@@ -646,8 +694,9 @@ export default function Home() {
         }
       : !results
         ? {
-            title: "Stopped",
-            hint: "Nothing was generated. Try again, or pick a different photo.",
+            // Also the state after Stop — the copy has to read right either way.
+            title: "Ready when you are",
+            hint: "Three styles from your photo, about 40 seconds.",
             label: "Generate the card",
             fn: () => generate(),
             on: true,
@@ -751,6 +800,11 @@ export default function Home() {
               className="cursor-pointer rounded-full border border-divider p-[13px] font-heading text-[15px]"
             >
               {saved ? "Saved both PNGs" : "Download front + back"}
+            </button>
+          )}
+          {results && (
+            <button onClick={buy} disabled={!active || buying} className={OUTLINE}>
+              {buying ? "Starting checkout…" : `Buy a printed copy — ${PRICE_LABEL}`}
             </button>
           )}
         </div>
@@ -999,6 +1053,19 @@ function ArrowUp() {
       <path d="m5 12 7-7 7 7" />
     </svg>
   );
+}
+
+async function upload(canvas: HTMLCanvasElement) {
+  const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
+  if (!blob) throw new Error("the card could not be rendered");
+  const res = await fetch("/api/o", {
+    method: "POST",
+    body: blob,
+    headers: { "content-type": "image/png" },
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
+  return json.url as string;
 }
 
 function DownloadIcon() {

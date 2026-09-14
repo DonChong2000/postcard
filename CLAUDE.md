@@ -19,13 +19,16 @@ prompts and export size without spending money on a model call. Every real gener
 costs $0.06-$0.60, so use `dryRun` for anything prompt-shaped.
 
 `.env.local` needs `GOOGLE_GENERATIVE_AI_API_KEY` (Gemini) and `AI_GATEWAY_API_KEY` (OpenAI
-via Vercel AI Gateway). Push to `main` deploys: lint → build → docker build → SSH +
-`docker compose up -d --build`.
+via Vercel AI Gateway). Selling needs six more: `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, and
+`R2_ACCOUNT_ID` / `R2_BUCKET` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY`. Without them the
+app still generates and downloads — only Buy 500s.
+
+Push to `main` deploys: lint → build → docker build → SSH + `docker compose up -d --build`.
 
 ## Architecture
 
-Five files do everything. The split exists so the money-spending part is small and the
-free parts are testable by eye.
+Five files do the postcard, three more sell it. The split exists so the money-spending part
+is small and the free parts are testable by eye.
 
 - **`src/lib/postcard.ts`** — pure data, no I/O: the 3 style prompts, the two model
   entries, `PAGE_PX` (2480x1748 = A5 at 300dpi), and `buildPrompt(style, side)` which
@@ -55,6 +58,29 @@ The back is opt-in (dev panel "Generate back too") because it doubles the cost; 
 it the back is plain paper with text drawn on it. The dev panel also loads the sample art
 as a fake result (free, exercises steps 3-4) and dumps the raw model output for all three
 styles.
+
+### Selling
+
+Buy sits beside Download and never replaces it — the file stays free. It renders the same two
+canvases, uploads both, and hands off to Stripe-hosted checkout; nothing about cards or
+payment touches this codebase.
+
+- **`src/app/api/o/[[...key]]/route.ts`** — the object store, both halves in one file because
+  they share the R2 client and the key format. POST sniffs PNG magic bytes and mints a random
+  key; GET proxies the bytes back rather than making the bucket public, so customers' photos
+  stay private and there is no DNS to own. Signing is `aws4fetch` (64KB) rather than
+  `@aws-sdk/client-s3` (~20MB). R2 rejects a chunked PUT — `content-length` is not optional.
+- **`src/app/api/checkout/route.ts`** — one Checkout Session. Takes both face URLs and refuses
+  any it did not mint, because that metadata is what a print job later downloads. The amount
+  comes from `STRIPE_PRICE_ID`, never the browser. Metadata goes on the session **and** the
+  PaymentIntent: Stripe copies neither to the other, the webhook sees the first and the
+  dashboard's Payments page shows the second.
+- **`src/app/success/page.tsx`** — server component, reads the session id Stripe substitutes
+  into `success_url` and shows the real total and destination. No id is not an error; it falls
+  back to a plain thank-you.
+
+There is no webhook and no order database. Fulfilment is reading the dashboard and posting a
+card. Add a webhook when doing that by hand stops being tolerable, not before.
 
 `src/instrumentation.ts` routes Node's fetch through `HTTPS_PROXY` when set — local dev
 only, no-op in production.

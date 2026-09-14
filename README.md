@@ -8,7 +8,8 @@ The front is generated from your photo. The back is plain paper with the address
 and message drawn over it in real text — image models cannot render legible lettering,
 so nothing that has to be read is generated. A generated near-empty background can be
 put behind that text with the dev panel's "Generate back too" toggle, at twice the cost. Both are
-composed and downloaded in the browser; nothing is stored.
+composed in the browser and downloaded for free; a file is only stored if you buy a
+printed one.
 
 Picking a photo starts the generation immediately — there is no confirm step, and the
 commitment is undone with Stop or Replace instead. Wide screens put a numbered flow rail
@@ -29,8 +30,16 @@ the middle into an A6 card.
 ```bash
 pnpm install
 cat >> .env.local <<'EOF'
-AI_GATEWAY_API_KEY=...          # Vercel AI Gateway key, for OpenAI
+AI_GATEWAY_API_KEY=...           # Vercel AI Gateway key, for OpenAI
 GOOGLE_GENERATIVE_AI_API_KEY=... # Google AI Studio key, for Gemini
+
+# Only needed to sell; without them everything but Buy works.
+STRIPE_SECRET_KEY=sk_test_...    # a sandbox key is enough for development
+STRIPE_PRICE_ID=price_...        # the price, not the product
+R2_ACCOUNT_ID=...
+R2_BUCKET=postcard
+R2_ACCESS_KEY_ID=...             # R2 > Manage API tokens, Object Read & Write
+R2_SECRET_ACCESS_KEY=...
 EOF
 pnpm run dev
 ```
@@ -71,12 +80,34 @@ Every request costs money, so uploads are capped at 10MB server-side, checked by
 bytes rather than the browser's Content-Type, and rate limited to 10 per IP per hour
 (in memory, so it resets on restart).
 
+## Buying a printed one
+
+Buy sits next to Download rather than replacing it — the PNGs stay free. It renders the
+same two faces, stores them in Cloudflare R2, and sends you to Stripe-hosted checkout,
+which collects the card and the postal address. No card details reach this app.
+
+The stored PNGs are private: the bucket is not public, and `/api/o/<key>` streams them
+back through the server under a random 128-bit key. That is also the URL recorded on the
+Stripe payment, which is how the print file is found later.
+
+There is no webhook and no order database. An order is a paid payment with two image
+URLs in its metadata, read from the Stripe dashboard and posted by hand. That is honest
+at this volume and stops being so somewhere around a few orders a week.
+
+Prices are immutable in Stripe — changing the amount means a new `price_...` id, and the
+label on the Buy button is a hand-kept copy of it.
+
 ## Deployment
 
 Self-hosted, deployed via GitHub Actions (`.github/workflows/deploy.yml`): lint → build → Docker build (CI validation) → SSH to the production server, which rebuilds via `docker compose up -d --build`. Pushing to `main` deploys to production.
 
-The server needs `AI_GATEWAY_API_KEY` and `GOOGLE_GENERATIVE_AI_API_KEY` in a `.env`
-file next to `docker-compose.yml`; the workflow only pulls and rebuilds, so without
-them every generation fails with a 500.
+The server needs the same environment as `.env.local` — both model keys, plus the Stripe
+and R2 keys if Buy is live — in a `.env` file next to `docker-compose.yml`. The workflow
+only pulls and rebuilds, so without the model keys every generation fails with a 500, and
+without the Stripe and R2 keys Buy does.
+
+Sandbox keys and live keys are separate worlds: going live means a new product, a new
+`price_...`, a fresh `sk_live_...` and re-registering anything that points at Stripe.
+Nothing migrates.
 
 Live at [postcard.donchong.com](https://postcard.donchong.com).
