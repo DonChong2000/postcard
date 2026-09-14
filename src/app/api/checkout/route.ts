@@ -30,7 +30,7 @@ export async function POST(request: Request) {
       // {CHECKOUT_SESSION_ID} is substituted by Stripe on the redirect — that is how the
       // success page knows which order to show.
       success_url: `${origin}/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: origin,
+      cancel_url: `${origin}/app`,
     });
     if (!session.url) return bad("Stripe returned no checkout url", 502);
     return Response.json({ url: session.url });

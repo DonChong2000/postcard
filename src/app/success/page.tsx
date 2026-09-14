@@ -32,7 +32,7 @@ export default async function Success({ searchParams }: PageProps<"/success">) {
         )}
 
         <Link
-          href="/"
+          href="/app"
           className="mt-7 inline-block cursor-pointer rounded-full bg-accent p-[13px] px-6 font-heading text-[15px] text-bg shadow-[0_6px_20px_rgba(46,43,37,.18)] hover:bg-accent-600"
         >
           Make another

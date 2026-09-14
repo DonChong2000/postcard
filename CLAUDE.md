@@ -27,8 +27,11 @@ Push to `main` deploys: lint → build → docker build → SSH + `docker compos
 
 ## Architecture
 
-Five files do the postcard, three more sell it. The split exists so the money-spending part
-is small and the free parts are testable by eye.
+Five files do the postcard, three more sell it, two more front it. The split exists so the
+money-spending part is small and the free parts are testable by eye.
+
+`/` is the landing page and `/app` is the maker; anything linking a buyer back to the tool
+(the success page, Stripe's `cancel_url`) has to say `/app`, not `/`.
 
 - **`src/lib/postcard.ts`** — pure data, no I/O: the 3 style prompts, the two model
   entries, `PAGE_PX` (2480x1748 = A5 at 300dpi), and `buildPrompt(style, side)` which
@@ -44,7 +47,7 @@ is small and the free parts are testable by eye.
   in-memory.
 - **`src/app/api/polish/route.ts`** — the ✨ in the message box. One `generateText` call
   on `gemini-flash-lite-latest`, plain text in and out, no rate limit of its own.
-- **`src/app/page.tsx`** — the whole UI, one client component. Picking a photo
+- **`src/app/app/page.tsx`** — the whole maker UI, one client component. Picking a photo
   (browse, or a drop anywhere on the window) only loads it; "Generate the card" is what
   spends money, and Stop/Replace undo it. The card preview is plain DOM
   over the returned images, both faces are `@container`s sized in `cqw`, so one component
@@ -59,6 +62,14 @@ The back is opt-in (dev panel "Generate back too") because it doubles the cost; 
 it the back is plain paper with text drawn on it. The dev panel also loads the sample art
 as a fake result (free, exercises steps 3-4) and dumps the raw model output for all three
 styles.
+
+### Landing
+
+- **`src/app/page.tsx`** — one screen: wordmark, headline, sentence, CTA to `/app`, and a
+  card. A server component; only the card is client. The designer cut the how-it-works
+  steps, outcome band, footer and price line. Don't reintroduce them.
+- **`src/app/SampleCard.tsx`** — the flipping example card, a trimmed copy of the maker's
+  `Card` rather than a shared component. Read the `ponytail:` comment before merging them.
 
 ### Selling
 
